@@ -23,7 +23,7 @@ class MultiModalEmotionClassifierDeep(nn.Module):
         
         self.dropout = nn.Dropout(dropout)
 
-        # GRU layers
+        # GRU layers (Original Bidirectional)
         self.speech_gru = nn.GRU(
             fusion_hidden_dim,
             fusion_hidden_dim,

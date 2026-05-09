@@ -168,4 +168,4 @@ bin/old/
 tests/
 recipes/msp/oldv1
 
-/home/lucas.ueda/github/Crab/recipes/meld/train_crab_rep.sh
+/home/lucas.ueda/github/Crab/recipes/meld/train_crab_rep.shdata/*.csv

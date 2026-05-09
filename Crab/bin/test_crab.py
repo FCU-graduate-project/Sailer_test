@@ -148,6 +148,10 @@ def load_text_data(df_path, dtype, debug=False):
         df_filtered = df[df['Split_Set'] == 'Development']
     elif dtype == "test":
         df_filtered = df[df['Split_Set'] == 'Test']
+    elif dtype == "test1":
+        df_filtered = df[df['Split_Set'] == 'Test1']
+    elif dtype == "test2":
+        df_filtered = df[df['Split_Set'] == 'Test2']
     else:
         raise ValueError(f"Unknown dtype: {dtype}")
     
