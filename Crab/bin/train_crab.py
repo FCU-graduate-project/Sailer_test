@@ -63,7 +63,9 @@ parser.add_argument("--model_path", type=str, default="./temp")
 parser.add_argument("--head_dim", type=int, default=1024)
 parser.add_argument("--use_tp", action="store_true", default=False)
 parser.add_argument("--tp_prob", type=float, default=0.8)
-parser.add_argument("--df_path", type=str, default="dataframes")
+parser.add_argument("--df_path", type=str, default="/home/brant/Project/SAILER_test/Crab/data/msp2_interview_scheme2.csv")
+parser.add_argument("--weights_json", type=str, default="/home/brant/Project/SAILER_test/Crab/data/msp2_interview_scheme2_weights.json",
+                    help="Precomputed class/sample weights JSON from prepare_interview_scheme2.py")
 parser.add_argument("--wav_base_dir", type=str, default="")
 parser.add_argument("--debug", action="store_true", default=False)
 parser.add_argument("--constrastive_loss", action="store_true", default=False)
@@ -72,9 +74,11 @@ parser.add_argument("--pooling_type", type=str, default="AttentionPoolingBatched
 parser.add_argument("--text_max_len", type=int, default=128)
 parser.add_argument("--fusion_hidden_dim", type=int, default=512)
 parser.add_argument("--classes_list", nargs='+', type=str, 
-                    default=['Angry', 'Sad', 'Happy', 'Surprise', 'Fear', 'Disgust', 'Contempt', 'Neutral'],
+                    default=['Excited', 'Unconfident', 'Neutral_3Class'],
                     help="List of emotion classes")
 parser.add_argument("--resume", action="store_true", help="Resume from the latest checkpoint in model_path")
+parser.add_argument("--project_name", type=str, default="SAILER_Emotion_Recognition")
+parser.add_argument("--run_name", type=str, default=None)
 
 args = parser.parse_args()
 
@@ -99,8 +103,8 @@ logger = logging.getLogger(__name__)
 
 # Initialize W&B
 wandb.init(
-    project="SAILER_Emotion_Recognition",
-    name=f"Crab_MSP_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+    project=args.project_name,
+    name=args.run_name if args.run_name else f"Crab_MSP_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
     config=vars(args),
 )
 
@@ -159,20 +163,35 @@ if 'Text' not in df.columns:
 # Filter out only 'Train' samples
 train_df = df[df['Split_Set'] == 'Train']
 
-# Calculate class frequencies for loss weighting
-class_frequencies = train_df[classes].sum().to_dict()
-total_samples = len(train_df)
-class_weights = {cls: total_samples / (len(classes) * freq) if freq != 0 else 0 for cls, freq in class_frequencies.items()}
-logger.info("Class weights for loss function:")
-logger.info(class_weights)
-
-# Convert to list in the order of classes
-weights_list = [class_weights[cls] for cls in classes]
-# Convert to PyTorch tensor for loss function
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
+logger.info(f"Device: {device}")
+
+# Load class weights from precomputed JSON (from prepare_interview_scheme2.py).
+# Fallback to dynamic computation when JSON is absent.
+if args.weights_json and os.path.exists(args.weights_json):
+    with open(args.weights_json) as f:
+        weights_data = json.load(f)
+    # class_weight_list is ordered by integer label [0→Excited, 1→Unconfident, 2→Neutral_3Class]
+    weights_list = weights_data['class_weight_list']
+    # map integer label → per-sample weight (used by WeightedRandomSampler)
+    label_to_weight = {v: weights_data['class_weight'][k]
+                       for k, v in weights_data['label_map'].items()}
+    logger.info("Class weights loaded from JSON:")
+    for cls, w in weights_data['class_weight'].items():
+        logger.info(f"  {cls}: {w:.4f}")
+else:
+    logger.warning("weights_json not found — computing class weights dynamically from training split.")
+    class_frequencies = train_df[classes].sum().to_dict()
+    total_samples = len(train_df)
+    class_weights_dyn = {cls: total_samples / (len(classes) * freq) if freq != 0 else 0
+                         for cls, freq in class_frequencies.items()}
+    weights_list = [class_weights_dyn[cls] for cls in classes]
+    label_to_weight = {i: weights_list[i] for i in range(len(classes))}
+    logger.info("Fallback class weights:")
+    logger.info(class_weights_dyn)
+
 class_weights_tensor = torch.tensor(weights_list, device=device, dtype=torch.float)
 logger.info(f"Loss weights tensor: {class_weights_tensor}")
-logger.info(f"Device: {device}")
 
 # Function to calculate sample weights for balanced sampling
 def calculate_sample_weights(labels_data, classes):
@@ -327,13 +346,14 @@ for dtype in ["train", "dev"]:
         if(debug):
             cur_df = cur_df.sample(n=100, random_state=42).reset_index(drop=True)
         
-        if(BALANCED_SAMPLING):
-            # Calculate sample weights
-            sample_weights = calculate_sample_weights(cur_df, classes)
-            
-            # Create WeightedRandomSampler
+        if BALANCED_SAMPLING:
+            # Derive per-sample weight directly from cur_labs (same ordering as the dataset).
+            # cur_labs is shape (N, C) one-hot; argmax gives integer label → look up weight.
+            int_labels = np.argmax(cur_labs, axis=1)
+            sample_weights = [label_to_weight[int(lbl)] for lbl in int_labels]
+
             sampler = WeightedRandomSampler(
-                weights=sample_weights,
+                weights=torch.tensor(sample_weights, dtype=torch.float),
                 num_samples=len(sample_weights),
                 replacement=True
             )
@@ -349,7 +369,7 @@ for dtype in ["train", "dev"]:
                 collate_fn=collate_fn_bimodal
             )
             
-            logger.info(f"\nTraining with balanced sampler:")
+            logger.info(f"\nTraining with Loss weighting + WeightedRandomSampler:")
             logger.info(f"  Total samples: {len(sample_weights)}")
             logger.info(f"  Batch size: {cur_bs}")
             logger.info(f"  Batches per epoch: {len(total_dataloader[dtype])}")

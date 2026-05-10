@@ -27,3 +27,12 @@ experiments/
 *.tar.gz
 *.wav
 *.mp3
+
+# Security & Logs
+.env
+*.log
+
+# Data & Serialized objects
+*.pkl
+*.csv
+Crab/data/*.csv
