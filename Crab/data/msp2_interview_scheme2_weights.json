@@ -1,0 +1,28 @@
+{
+  "thresholds": {
+    "V_th": 4.5,
+    "A_th": 4.5,
+    "D_hi_th": 4.5,
+    "D_low_th": 3.8
+  },
+  "class_counts": {
+    "Excited": 26157,
+    "Unconfident": 34936,
+    "Neutral_3Class": 115856
+  },
+  "class_weight": {
+    "Excited": 2.254960431242115,
+    "Unconfident": 1.688315777421571,
+    "Neutral_3Class": 0.5091061317497583
+  },
+  "class_weight_list": [
+    2.254960431242115,
+    1.688315777421571,
+    0.5091061317497583
+  ],
+  "label_map": {
+    "Excited": 0,
+    "Unconfident": 1,
+    "Neutral_3Class": 2
+  }
+}
