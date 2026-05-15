@@ -75,7 +75,7 @@ def test():
             fh = open(item["path"], "rb")
             file_handles.append(fh)
             files.append(("files", (item["filename"], fh, "audio/wav")))
-            # data_fields.append(("texts", item["text"]))
+            data_fields.append(("texts", item["text"]))
             
         t0 = time.perf_counter()
         try:

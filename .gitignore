@@ -36,3 +36,6 @@ experiments/
 *.pkl
 *.csv
 Crab/data/*.csv
+
+# Scratch / personal notes
+scratch/

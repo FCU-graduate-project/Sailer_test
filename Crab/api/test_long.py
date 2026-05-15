@@ -220,6 +220,7 @@ def test_audio_only_vs_with_text(url: str, audio_bytes: bytes):
 def main():
     parser = argparse.ArgumentParser(description="Test classify-long endpoint")
     parser.add_argument("--url", default="http://localhost:8001", help="API base URL")
+    parser.add_argument("--wav", default=None, help="Path to an audio file (WAV/MP3/FLAC)")
     parser.add_argument("--duration", type=float, default=60.0, help="Target duration in seconds")
     parser.add_argument(
         "--csv", default="/home/brant/Project/SAILER_test/Crab/data/msp2_interview_scheme2.csv"
@@ -241,15 +242,22 @@ def main():
         print(f"\n❌ Cannot connect to {args.url}. Is the server running?")
         sys.exit(1)
 
-    # Test 1: Short audio
-    test_with_short_audio(args.url, args.audio_dir, args.csv)
-
-    # Build long audio
-    print(f"\n🔧 Building synthetic {args.duration}s audio from MSP clips...")
-    long_audio = build_long_audio_from_csv(args.csv, args.audio_dir, target_sec=args.duration)
+    if args.wav:
+        print(f"\n📁 Using provided audio: {args.wav}")
+        with open(args.wav, "rb") as f:
+            long_audio = f.read()
+        duration_label = "Custom Audio"
+    else:
+        # Test 1: Short audio (only if synthesizing)
+        test_with_short_audio(args.url, args.audio_dir, args.csv)
+        
+        # Build long audio
+        print(f"\n🔧 Building synthetic {args.duration}s audio from MSP clips...")
+        long_audio = build_long_audio_from_csv(args.csv, args.audio_dir, target_sec=args.duration)
+        duration_label = f"{args.duration}s"
 
     # Test 2: Long audio
-    test_with_long_audio(args.url, long_audio, f"{args.duration}s")
+    test_with_long_audio(args.url, long_audio, duration_label)
 
     # Test 3: Audio-only vs with text
     test_audio_only_vs_with_text(args.url, long_audio)
