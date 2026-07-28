@@ -1,0 +1,7 @@
+{
+  "class_weight": {
+    "Excited": 0.9144,
+    "Unconfident": 1.933,
+    "Neutral_3Class": 0.7199
+  }
+}

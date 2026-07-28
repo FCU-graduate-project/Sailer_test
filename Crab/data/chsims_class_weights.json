@@ -1,0 +1,9 @@
+{
+  "class_weight": {
+    "Negative": 0.7855699855699856,
+    "WeaklyNegative": 1.1912472647702408,
+    "Neutral": 0.8852032520325204,
+    "WeaklyPositive": 1.0100185528756958,
+    "Positive": 1.3023923444976075
+  }
+}

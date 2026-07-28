@@ -1,0 +1,8 @@
+{
+  "class_weight": {
+    "Angry": 1.0,
+    "Happy": 1.0,
+    "Neutral": 1.0,
+    "Anxious": 1.0
+  }
+}
