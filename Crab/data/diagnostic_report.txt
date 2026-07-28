@@ -1,0 +1,35 @@
+================================================================================
+Crab Diagnostic Baseline — current EN-trained model on bilingual synthetic data
+================================================================================
+
+[B] Alpha sensitivity sweep
+    Per (folder, emotion): max pairwise JS divergence across alpha 0.3–0.9
+    Bigger = audio encoder responds more to prosody intensity
+    EN: n= 80  mean JS=0.0236  median=0.0089  std=0.0319
+    CN: n= 80  mean JS=0.0793  median=0.0315  std=0.0974
+    Sensitivity ratio CN/EN = 3.365
+    → CN sensitivity is 336.5% of EN baseline
+    ✓ ratio ≥ 0.8 → audio encoder reasonably sensitive to CN prosody
+
+[C] Cross-lingual prediction distribution
+    Avg pred distribution (over 560 clips each):
+      EN: Excited=0.494  Unconfident=0.035  Neutral_3Class=0.472
+      CN: Excited=0.136  Unconfident=0.155  Neutral_3Class=0.709
+    KL(EN||CN) = 0.3924
+    KL(CN||EN) = 0.3465
+    JS divergence = 0.0867
+    → Bigger JS = predictions diverge more by language (independent of ground truth)
+
+[D] TSNE on WavLM audio embeddings
+    TSNE saved → /home/brant/Project/SAILER_test/Crab/data/diagnostic_tsne.png
+    Cluster separation (inter-emo dist / intra-emo dist):
+      EN: intra=39.95  inter=39.51  ratio=0.989  (>1 = emotions separated)
+      CN: intra=27.57  inter=27.54  ratio=0.999  (>1 = emotions separated)
+    Separation ratio CN/EN = 1.010
+
+================================================================================
+SUMMARY
+================================================================================
+  B (alpha sensitivity): CN/EN = 3.365
+  C (cross-lingual JS):  0.0867
+  D (cluster separation): CN/EN = 1.010
