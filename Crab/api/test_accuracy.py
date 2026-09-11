@@ -4,7 +4,7 @@ import time
 import requests
 import random
 
-API_URL = "http://0.0.0.0:8001/v1/emotion/classify-batch"
+API_URL = "http://127.0.0.1:8001/v1/emotion/classify-batch"
 CSV_PATH = "/home/brant/Project/SAILER_test/Crab/data/msp2_interview_scheme1.csv"
 AUDIO_DIR = "/home/brant/Project/SAILER_test/datasets/MSP_Podcast_Data/Audios/"
 

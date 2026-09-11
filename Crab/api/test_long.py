@@ -9,8 +9,7 @@ segmentation and timeline tracking.
 Usage:
     cd /home/brant/Project/SAILER_test
     # Start the API first:
-    #   export CRAB_MODEL_DIR=Crab/experiments/interview_scheme2
-    #   Crab/.venv/bin/python -m uvicorn Crab.api.app:app --host 0.0.0.0 --port 8001
+    #   Crab/.venv/bin/python -m uvicorn Crab.api.app:app --host 127.0.0.1 --port 8001 --workers 1
     # Then run:
     Crab/.venv/bin/python -m Crab.api.test_long
 """

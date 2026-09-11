@@ -1,0 +1,19 @@
+# Exact versions verified in Crab/.venv on 2026-09-02.
+# CUDA wheels must come from the matching PyTorch cu121 index.
+fastapi==0.136.1
+uvicorn[standard]==0.46.0
+starlette==1.0.0
+pydantic==2.13.3
+python-multipart==0.0.27
+requests==2.33.1
+httpx==0.28.1
+torch==2.2.0+cu121
+torchaudio==2.2.0+cu121
+transformers==4.47.1
+tokenizers==0.21.0
+huggingface-hub==0.27.0
+peft==0.19.1
+accelerate==1.13.0
+safetensors==0.4.5
+numpy==1.24.4
+scikit-learn==1.3.0

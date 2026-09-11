@@ -1,9 +1,17 @@
-# Crab Bimodal Emotion API
+# Crab Bimodal Emotion API（Scheme 1 v1.1 歷史文件）
+
+> [!WARNING]
+> 本文件保存 2026-05 的英文 Scheme 1 v1.1 說明，只供追溯，不代表目前
+> N3 v1.3 runtime。尤其「GPU 平行 batch」、預設模型、回應欄位與部署方式
+> 已不再是現行契約。中文 N3 的唯一入口請使用 [`N3_API.md`](N3_API.md)，
+> 精確 HTTP contract 以服務的 `/openapi.json` 為準；請勿依本頁 Quick Start
+> 直接部署 N3。
 
 基於 FastAPI 構建的高性能面試情感辨識 REST API。本模組將訓練完成的 Crab 雙模態模型（WavLM-Large + RoBERTa-Large）封裝為生產環境可用的服務，專為 LangGraph 面試模擬器設計。
 
-**Version:** 1.1
-**Date:** 2026-05-15
+**Historical version:** 1.1
+**Historical date:** 2026-05-15
+**Current N3 documentation:** [`N3_API.md`](N3_API.md)
 **Base URL:** `http://<SERVER_IP>:8001`
 **Interactive Docs:** `http://<SERVER_IP>:8001/docs` (Swagger UI)
 

@@ -78,11 +78,18 @@ def label_index(row):
 
 
 def attach_lora(predictor, model_dir):
-    """Wrap predictor's ssl_model and text_model with PeftModel loaded from
-    LoRA adapter subdirs. Called after CrabEmotionPredictor.__init__ (base
-    HF weights already loaded — final_ssl.pt / final_text.pt do NOT exist
-    for LoRA ckpts, so the predictor kept pristine base weights)."""
+    """Attach adapters for legacy loaders; no-op for the validated loader."""
     from peft import PeftModel
+
+    audio_attached = isinstance(predictor.ssl_model, PeftModel)
+    text_attached = isinstance(predictor.text_model, PeftModel)
+    if audio_attached and text_attached:
+        print("  LoRA adapters already attached by CrabEmotionPredictor", flush=True)
+        return
+    if audio_attached != text_attached:
+        raise RuntimeError(
+            "Only one encoder has a LoRA adapter; refusing a mixed model state"
+        )
 
     audio_adapter = Path(model_dir) / "audio_lora_adapter"
     text_adapter  = Path(model_dir) / "text_lora_adapter"
