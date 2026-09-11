@@ -5,8 +5,8 @@
 WAR / UAR / macro-F1 + 各類 P/R/F1 + 混淆矩陣。
 
 用法:
-  .venv/bin/python scripts/eval_okeke4_per_lang.py --model_dir experiments/okeke_bilingual_4class --langs ZH EN
-  .venv/bin/python scripts/eval_okeke4_per_lang.py --model_dir experiments/okeke_msp_4class      --langs ZH
+  .venv/bin/python projects/okeke/scripts/eval_okeke4_per_lang.py \
+    --model_dir projects/okeke/models/okeke_bilingual_4class --langs ZH EN
 """
 import argparse
 import csv
@@ -18,11 +18,12 @@ import numpy as np
 from sklearn.metrics import (accuracy_score, recall_score, f1_score,
                              classification_report, confusion_matrix)
 
-CRAB = Path("/home/brant/Project/SAILER_test/Crab")
-sys.path.insert(0, str(CRAB))
-from api.okeke_infer import OkekeSER, CLASSES  # noqa: E402
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+CRAB_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(CRAB_ROOT))
+from projects.okeke.api.okeke_infer import OkekeSER, CLASSES  # noqa: E402
 
-DF = CRAB / "data" / "okeke_bilingual_4class.csv"
+DF = PROJECT_ROOT / "data" / "okeke_bilingual_4class.csv"
 
 
 def true_idx(r):

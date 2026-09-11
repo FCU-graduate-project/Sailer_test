@@ -1,5 +1,14 @@
 # OKEKE 雙語 4 類 SER 重訓計劃(MSP + EmotionTalk · LoRA)
 
+> **Path note (2026-09-02):** OKEKE 已集中到 `Crab/projects/okeke/` 的
+> `data/`、`scripts/`、`train/`、`api/`、`models/` 與 `logs/`。
+> 下方舊路徑是當時紀錄；目前入口以 [`../README.md`](../README.md) 為準。
+
+> **Scope notice:** 這是遊戲用四分類的獨立歷史計畫，不是目前
+> N3 三分類中文面試 API 的部署待辦。除非重新啟動 OKEKE 工作，不應把
+> 本檔的 batch、label 或 GPU 決策套到 N3。現況入口見
+> [`DOCUMENTATION_INDEX.md`](../../../DOCUMENTATION_INDEX.md)。
+>
 > 目標:讓遊戲的 SER 中文也準。沿用已驗證的 **strategyA 雙語 LoRA 配方**,
 > 只把類別從 3 類(Excited/Unconfident/Neutral)換成遊戲的 **4 類(Angry/Happy/Neutral/Anxious)**。
 > ⚠️ 動工前等 Kaiser 確認;GPU 單卡、AMP+grad ckpt、不准 OOM、一察覺不對就停。

@@ -159,6 +159,8 @@ cache/
 
 # Results and experiment folders (customize as needed)
 experiments/
+projects/okeke/models/
+projects/okeke/data/*.csv
 # results/
 # outputs/
 

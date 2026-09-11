@@ -22,8 +22,8 @@ spot-check, duplicate FileName across sources. Also writes inverse-frequency cla
 weights on the MERGED train split.
 
 Usage:
-    python scripts/build_okeke_bilingual_csv.py                 # default ratio 2.5
-    python scripts/build_okeke_bilingual_csv.py --target_ratio 2.5 --seed 42
+    python projects/okeke/scripts/build_okeke_bilingual_csv.py
+    python projects/okeke/scripts/build_okeke_bilingual_csv.py --target_ratio 2.5 --seed 42
 """
 from pathlib import Path
 import argparse
@@ -32,13 +32,14 @@ from collections import Counter
 
 import pandas as pd
 
-CRAB = Path("/home/brant/Project/SAILER_test/Crab")
-MSP_CSV = CRAB / "data" / "okeke_msp_4class.csv"
-ET_CSV  = CRAB / "data" / "emotiontalk_okeke4_crab_format.csv"
-ET_WAV  = Path("/home/brant/Project/SAILER_test/datasets/emotiontalk/Audio16k")
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+WORKSPACE_ROOT = Path(__file__).resolve().parents[4]
+MSP_CSV = PROJECT_ROOT / "data" / "okeke_msp_4class.csv"
+ET_CSV  = PROJECT_ROOT / "data" / "emotiontalk_okeke4_crab_format.csv"
+ET_WAV  = WORKSPACE_ROOT / "datasets" / "emotiontalk" / "Audio16k"
 
-OUT       = CRAB / "data" / "okeke_bilingual_4class.csv"
-OUT_WJSON = CRAB / "data" / "okeke_bilingual_4class_weights.json"
+OUT       = PROJECT_ROOT / "data" / "okeke_bilingual_4class.csv"
+OUT_WJSON = PROJECT_ROOT / "data" / "okeke_bilingual_4class_weights.json"
 
 CLASSES = ["Angry", "Happy", "Neutral", "Anxious"]
 

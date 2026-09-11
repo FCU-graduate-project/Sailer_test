@@ -3,14 +3,14 @@
 載入訓練好的 LoRA 微調模型,輸入一段 wav(+ 可選 transcript)→ 4 類情緒機率
 (Angry / Happy / Neutral / Anxious)。辨識對象是「玩家(店員)講話的語氣」。
 
-模型組成(預設 experiments/okeke_bilingual_4class,見 _DEFAULT_DIR;結構與舊 okeke_msp_4class 同):
+模型組成(預設 projects/okeke/models/okeke_bilingual_4class):
   - 音訊:facebook/wav2vec2-xls-r-300m + audio_lora_adapter(q_proj/v_proj, r16/a32)
   - 文字:FacebookAI/xlm-roberta-large + text_lora_adapter(query/value)
   - 融合+分類頭:MultiModalEmotionClassifierDeep(final_ser.pt,num_emotions=4)
   - 波形正規化:train_norm_stat.pkl(mean/std)—— 一定要套,否則編碼器看到不同分布→預測爛掉
 
 CLI:
-  uv run python api/okeke_infer.py <wav_path> [--text "逐字稿"]
+  .venv/bin/python -m projects.okeke.api.okeke_infer <wav_path> [--text "逐字稿"]
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ import math
 import os
 import pickle
 import sys
+from pathlib import Path
 
 import librosa
 import numpy as np
@@ -28,8 +29,9 @@ import torch.nn.functional as F
 from peft import PeftModel
 from transformers import AutoModel, AutoTokenizer
 
-# 讓 `from src.models.ser import ...` 找得到(本檔在 Crab/api/ 下)
-_CRAB_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# 讓 `from src.models.ser import ...` 找得到。
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+_CRAB_ROOT = str(Path(__file__).resolve().parents[3])
 if _CRAB_ROOT not in sys.path:
     sys.path.insert(0, _CRAB_ROOT)
 from src.models.ser import MultiModalEmotionClassifierDeep  # noqa: E402
@@ -38,8 +40,8 @@ CLASSES = ["Angry", "Happy", "Neutral", "Anxious"]   # index 0..3,順序同訓�
 TARGET_SR = 16000
 MAX_LEN = 12 * TARGET_SR        # 訓練截斷 12 秒
 TEXT_MAX_LEN = 128
-_DEFAULT_DIR = os.path.join(_CRAB_ROOT, "experiments", "okeke_bilingual_4class")
-# 備援(回退):舊純英文模型 = os.path.join(_CRAB_ROOT, "experiments", "okeke_msp_4class")
+_DEFAULT_DIR = str(_PROJECT_ROOT / "models" / "okeke_bilingual_4class")
+# 備援(回退):舊純英文模型 = _PROJECT_ROOT / "models" / "okeke_msp_4class"
 # 2026-06-11 換成雙語 4 類:中文 test macro-F1 0.46→0.57(+24.5%)
 _SSL_NAME = "facebook/wav2vec2-xls-r-300m"
 _TEXT_NAME = "FacebookAI/xlm-roberta-large"

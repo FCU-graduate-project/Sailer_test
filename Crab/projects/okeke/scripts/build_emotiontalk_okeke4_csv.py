@@ -20,9 +20,9 @@ Audio16k (the 3-class build resampled everything EXCEPT anger/disgust, so this r
 fills in ~4.6k new Angry-class wavs and skips the rest).
 
 Usage:
-    python scripts/build_emotiontalk_okeke4_csv.py --inspect   # sanity first
-    python scripts/build_emotiontalk_okeke4_csv.py             # build (resamples new files)
-    python scripts/build_emotiontalk_okeke4_csv.py --skip_resample  # CSV only
+    python projects/okeke/scripts/build_emotiontalk_okeke4_csv.py --inspect
+    python projects/okeke/scripts/build_emotiontalk_okeke4_csv.py
+    python projects/okeke/scripts/build_emotiontalk_okeke4_csv.py --skip_resample
 """
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -33,13 +33,15 @@ import re
 import subprocess
 import sys
 
-ROOT       = Path("/home/brant/Project/SAILER_test/datasets/emotiontalk")
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+WORKSPACE_ROOT = Path(__file__).resolve().parents[4]
+ROOT       = WORKSPACE_ROOT / "datasets" / "emotiontalk"
 AUDIO_ROOT = ROOT / "Audio" / "Audio"   # extracted Audio.tar → contains json/ + wav/
 ANN_DIR    = AUDIO_ROOT / "json"        # annotation jsons (nested G#####/.../*.json)
 WAV_ROOT   = AUDIO_ROOT / "wav"         # 44.1kHz wavs, same relative tree as file_path
 OUT16K     = ROOT / "Audio16k"          # resampled target (wav_base_dir for training)
-OUT_CSV   = Path("/home/brant/Project/SAILER_test/Crab/data/emotiontalk_okeke4_crab_format.csv")
-OUT_WJSON = Path("/home/brant/Project/SAILER_test/Crab/data/emotiontalk_okeke4_class_weights.json")
+OUT_CSV   = PROJECT_ROOT / "data" / "emotiontalk_okeke4_crab_format.csv"
+OUT_WJSON = PROJECT_ROOT / "data" / "emotiontalk_okeke4_class_weights.json"
 FFMPEG    = "/home/brant/bin/ffmpeg"
 
 CLASSES = ["Angry", "Happy", "Neutral", "Anxious"]   # order identical to the game / MSP build

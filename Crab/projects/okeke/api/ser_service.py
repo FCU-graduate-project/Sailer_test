@@ -6,8 +6,7 @@
 啟動:
   cd /home/brant/Project/SAILER_test/Crab
   source .venv/bin/activate
-  uvicorn api.ser_service:app --host 127.0.0.1 --port 8100
-  # 或:python -m uvicorn api.ser_service:app --host 127.0.0.1 --port 8100
+  uvicorn projects.okeke.api.ser_service:app --host 127.0.0.1 --port 8100
 
 端點:
   GET  /health            → {ok, classes, device}
@@ -19,18 +18,13 @@ from __future__ import annotations
 
 import base64
 import os
-import sys
 import tempfile
 
 import numpy as np
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
-# 讓 `from api.okeke_infer import ...` 找得到(本檔在 Crab/api/ 下)
-_CRAB_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if _CRAB_ROOT not in sys.path:
-    sys.path.insert(0, _CRAB_ROOT)
-from api.okeke_infer import CLASSES, OkekeSER  # noqa: E402
+from .okeke_infer import CLASSES, OkekeSER
 
 app = FastAPI(title="Okeke SER 微服務")
 _predictor: OkekeSER | None = None

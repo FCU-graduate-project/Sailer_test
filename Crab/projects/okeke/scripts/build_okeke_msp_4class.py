@@ -1,17 +1,19 @@
 """MSP-Podcast 8類 → 奧客遊戲 4類(Angry/Happy/Neutral/Anxious),平衡子採樣。
   Angry = Angry+Disgust+Contempt | Happy = Happy+Surprise | Neutral = Neutral | Anxious = Sad+Fear
-輸出: data/okeke_msp_4class.csv(FileName 絕對路徑, Text, Split_Set, 4 one-hot)
-       data/okeke_msp_4class_weights.json
+輸出: projects/okeke/data/okeke_msp_4class.csv
+       projects/okeke/data/okeke_msp_4class_weights.json
 子採樣是為了「控訓練時間 + CPU/RAM 安全」,非記憶體 preload(訓練走 LazyWavSet 懶載)。
 """
 import json, pandas as pd
 from pathlib import Path
 
-CRAB = Path("/home/brant/Project/SAILER_test/Crab")
-SRC  = CRAB / "data" / "msp2_processed_labels.csv"
-WAV  = Path("/home/brant/Project/SAILER_test/datasets/MSP_Podcast_Data/Audios")
-OUT  = CRAB / "data" / "okeke_msp_4class.csv"
-WJS  = CRAB / "data" / "okeke_msp_4class_weights.json"
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+CRAB_ROOT = Path(__file__).resolve().parents[3]
+WORKSPACE_ROOT = Path(__file__).resolve().parents[4]
+SRC  = CRAB_ROOT / "data" / "msp2_processed_labels.csv"
+WAV  = WORKSPACE_ROOT / "datasets" / "MSP_Podcast_Data" / "Audios"
+OUT  = PROJECT_ROOT / "data" / "okeke_msp_4class.csv"
+WJS  = PROJECT_ROOT / "data" / "okeke_msp_4class_weights.json"
 SEED = 42
 CAP  = {"Train": 10000, "Development": 1500, "Test": 1500}   # per-class 上限(控時間/CPU)
 GROUP = {"Angry":["Angry","Disgust","Contempt"], "Happy":["Happy","Surprise"],
