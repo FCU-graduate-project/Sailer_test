@@ -149,6 +149,10 @@ parser.add_argument("--grad_clip", type=float, default=1.0, help="0 disables")
 parser.add_argument("--early_stop_patience", type=int, default=5, help="0 disables")
 parser.add_argument("--eval_test", action="store_true", default=True,
                     help="evaluate test split at the end with best model")
+parser.add_argument("--no_eval_test", action="store_false", dest="eval_test",
+                    help="defer Test evaluation until all experiment settings are locked")
+parser.add_argument("--no_pin_memory", action="store_false", dest="pin_memory", default=True,
+                    help="disable pinned host-memory buffers for memory-constrained runs")
 parser.add_argument("--num_workers", type=int, default=0,
                     help="DataLoader worker processes for wav loading (0=single-thread). "
                          "On 6-core box, 3 is sweet spot.")
@@ -156,7 +160,36 @@ parser.add_argument("--debug", action="store_true", default=False)
 parser.add_argument("--resume", action="store_true", default=False)
 parser.add_argument("--project_name", type=str, default="Crab_Bilingual_ZH")
 parser.add_argument("--run_name", type=str, default=None)
+parser.add_argument("--wandb_entity", type=str, default=None)
+parser.add_argument("--wandb_group", type=str, default=None)
+parser.add_argument("--experiment_metadata", type=str, default=None,
+                    help="JSON object of additional, non-overriding W&B provenance fields")
+parser.add_argument("--require_warmstart", action="store_true",
+                    help="fail closed if requested LoRA/head warm-start is unavailable")
+parser.add_argument("--smoke_test", action="store_true",
+                    help="one forward/backward check without optimizer step or online W&B run")
 args = parser.parse_args()
+
+if args.require_warmstart:
+    if not (args.lora_warmstart and args.warm_start_ser and args.ft_mode == "lora"):
+        parser.error("--require_warmstart requires LoRA and SER warm-start")
+    for relative in ("final_ser.pt", "text_lora_adapter/adapter_config.json",
+                     "text_lora_adapter/adapter_model.safetensors",
+                     "audio_lora_adapter/adapter_config.json",
+                     "audio_lora_adapter/adapter_model.safetensors"):
+        if not os.path.isfile(os.path.join(args.pre_trained_path, relative)):
+            parser.error(f"required warm-start file missing: {relative}")
+
+experiment_config = dict(vars(args))
+if args.experiment_metadata:
+    with open(args.experiment_metadata, encoding="utf-8") as metadata_file:
+        extra_config = json.load(metadata_file)
+    if not isinstance(extra_config, dict):
+        parser.error("experiment metadata must be a JSON object")
+    conflicts = set(extra_config).intersection(experiment_config)
+    if conflicts:
+        parser.error(f"metadata must not override CLI arguments: {sorted(conflicts)}")
+    experiment_config.update(extra_config)
 
 # ───────────────────────────── setup ─────────────────────────────
 MODEL_PATH = args.model_path
@@ -212,8 +245,11 @@ assert (ACCUMULATION_STEP > 0) and (BATCH_SIZE % ACCUMULATION_STEP == 0), \
 
 wandb.init(
     project=args.project_name,
+    entity=args.wandb_entity,
+    group=args.wandb_group,
     name=args.run_name if args.run_name else f"crab_lora_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
-    config=vars(args),
+    config=experiment_config,
+    mode="disabled" if args.smoke_test else None,
 )
 
 logger.info("=" * 80)
@@ -297,6 +333,8 @@ for dtype in splits:
         logger.info("Computing normalization stats...")
         cur_wav_set.compute_norm_stats(sample_size=5000)
         cur_wav_set.save_norm_stat(MODEL_PATH + "/train_norm_stat.pkl")
+        wandb.run.summary["norm_mean"] = float(cur_wav_set.wav_mean)
+        wandb.run.summary["norm_std"] = float(cur_wav_set.wav_std)
     else:
         wav_mean = total_dataset["train"].datasets[0].wav_mean
         wav_std = total_dataset["train"].datasets[0].wav_std
@@ -359,7 +397,7 @@ for dtype in splits:
         logger.info(f"3-layer sampler: EN sources={en_src_counts}, ZH sources={zh_src_counts}, "
                     f"total lang={lang_counts}, fear_boost {boost_src}×{boost_ratio} hit {boost_hits} rows")
         total_dataloader[dtype] = DataLoader(total_dataset[dtype], batch_size=cur_bs, sampler=sampler,
-                                             pin_memory=True, num_workers=args.num_workers, collate_fn=collate_fn_bimodal)
+                                             pin_memory=args.pin_memory, num_workers=args.num_workers, collate_fn=collate_fn_bimodal)
     elif dtype == "train" and args.language_balanced:
         # 50:50 EN / ZH via per-sample weights (inverse-frequency by language).
         # Build a FileName→Language lookup so weights align with cur_utts order,
@@ -382,20 +420,20 @@ for dtype in splits:
         logger.info(f"Language-balanced sampler: counts={lang_counts}, "
                     f"aligned to cur_utts ({len(cur_utts)} rows)")
         total_dataloader[dtype] = DataLoader(total_dataset[dtype], batch_size=cur_bs, sampler=sampler,
-                                             pin_memory=True, num_workers=args.num_workers, collate_fn=collate_fn_bimodal)
+                                             pin_memory=args.pin_memory, num_workers=args.num_workers, collate_fn=collate_fn_bimodal)
     elif dtype == "train" and BALANCED_SAMPLING:
         labs_indices = (np.argmax(cur_labs, axis=1) if np.array(cur_labs).ndim > 1
                         else np.array(cur_labs).astype(int))
         sample_weights = [weights_list[i] for i in labs_indices]
         sampler = WeightedRandomSampler(sample_weights, len(sample_weights), replacement=True)
         total_dataloader[dtype] = DataLoader(total_dataset[dtype], batch_size=cur_bs, sampler=sampler,
-                                             pin_memory=True, num_workers=args.num_workers, collate_fn=collate_fn_bimodal)
+                                             pin_memory=args.pin_memory, num_workers=args.num_workers, collate_fn=collate_fn_bimodal)
     elif dtype == "train":
         total_dataloader[dtype] = DataLoader(total_dataset[dtype], batch_size=cur_bs, shuffle=True,
-                                             pin_memory=True, num_workers=args.num_workers, collate_fn=collate_fn_bimodal)
+                                             pin_memory=args.pin_memory, num_workers=args.num_workers, collate_fn=collate_fn_bimodal)
     else:
         total_dataloader[dtype] = DataLoader(total_dataset[dtype], batch_size=cur_bs * 4 if dtype == "dev" else 1,
-                                             shuffle=False, pin_memory=True, num_workers=args.num_workers,
+                                             shuffle=False, pin_memory=args.pin_memory, num_workers=args.num_workers,
                                              collate_fn=collate_fn_bimodal)
     logger.info(f"{dtype}: {len(total_dataset[dtype])} samples, {len(total_dataloader[dtype])} batches")
 
@@ -569,6 +607,8 @@ if args.warm_start_ser:
             ser_model.load_state_dict(state)
             logger.info(f"Warm-started ser_model from {ser_init}")
         except Exception as e:
+            if args.require_warmstart:
+                raise RuntimeError("required SER warm-start failed") from e
             logger.warning(f"ser warm-start failed ({e}); using fresh init")
     else:
         logger.warning(f"--warm_start_ser set but no {ser_init}; using fresh init")
@@ -656,6 +696,41 @@ def run_eval(loader):
 
 
 # ───────────────────────────── train loop ─────────────────────────────
+if args.smoke_test:
+    import soundfile as sf
+    paths = total_dataset["train"].datasets[0].wav_paths
+    lengths = [min(sf.info(path).duration, 12.0) for path in paths]
+    indices = sorted(range(len(paths)), key=lambda index: (-lengths[index], index))[:cur_bs]
+    batch = collate_fn_bimodal([total_dataset["train"][index] for index in indices])
+    (audio, audio_mask), (tokens, token_mask), labels, _ = batch
+    audio = audio.to(device).float()
+    audio_mask = audio_mask.to(device).float()
+    tokens, token_mask = tokens.to(device), token_mask.to(device)
+    labels = labels.to(device).argmax(dim=1).long()
+    with _amp_ctx():
+        audio_hidden = ssl_model(audio, attention_mask=audio_mask).last_hidden_state
+        text_hidden = text_model(input_ids=tokens, attention_mask=token_mask).last_hidden_state
+        logits, embeddings = ser_model(audio_hidden, text_hidden, return_embeddings=True)
+        loss = criterion(logits, labels)
+        if CONTRASTIVE_WEIGHT > 0:
+            con = (contrastive_criterion_audio(embeddings['speech_frame_emb'], labels)
+                   + contrastive_criterion_text(embeddings['text_frame_emb'], labels)
+                   + contrastive_criterion_audio(embeddings['speech_pooled_emb'], labels)
+                   + contrastive_criterion_text(embeddings['text_pooled_emb'], labels)
+                   + contrastive_criterion_fusion(embeddings['fusion_emb'], labels)) / 5
+            loss = loss + CONTRASTIVE_WEIGHT * con
+    if not torch.isfinite(loss):
+        raise RuntimeError("non-finite smoke-test loss")
+    (loss / ACCUMULATION_STEP).backward()
+    logger.info("SMOKE PASS: longest train micro-batch forward/backward; no optimizer step; loss=%.6f", loss.item())
+    if device == "cuda":
+        logger.info("SMOKE peak GPU allocated=%.3f GiB reserved=%.3f GiB",
+                    torch.cuda.max_memory_allocated() / 2**30,
+                    torch.cuda.max_memory_reserved() / 2**30)
+    wandb.finish()
+    sys.exit(0)
+
+optimizer_updates = 0
 max_f1, best_epoch, epochs_no_improve = 0.0, 0, 0
 logger.info("\n" + "=" * 80 + "\nStarting LoRA training\n" + "=" * 80)
 
@@ -701,6 +776,7 @@ for epoch in range(EPOCHS):
                         torch.nn.utils.clip_grad_norm_(g['params'], GRAD_CLIP)
             for opt in opts:
                 opt.step(); opt.zero_grad(set_to_none=True)
+            optimizer_updates += 1
 
         # (2) compute scalars ONCE per batch and reuse for both running
         # accumulators and wandb. Original called .item()/float() six times
@@ -731,6 +807,7 @@ for epoch in range(EPOCHS):
 
     epoch_step = (epoch + 1) * len(total_dataloader["train"]) - 1
     wandb_log = {
+        "optimizer_updates": optimizer_updates,
         "epoch": epoch, "train_loss": train_loss, "train_cls_loss": train_cls,
         "train_contrastive_loss": train_con,
         "dev_loss": dev['loss'], "dev_WAR": dev['war'], "dev_UAR": dev['uar'],
@@ -771,6 +848,16 @@ for epoch in range(EPOCHS):
         save_models("best")
         wandb.run.summary["best_dev_macro_f1"] = max_f1
         wandb.run.summary["best_epoch"] = best_epoch
+        best_f1 = f1_score(dev['y_true'], dev['y_pred'], labels=range(len(classes)),
+                           average=None, zero_division=0)
+        for index, cls in enumerate(classes):
+            wandb.run.summary[f"best_dev_f1/{cls}"] = float(best_f1[index])
+        for cls in ("Neutral_3Class", "Excited"):
+            if cls in classes and "Unconfident" in classes:
+                mask = dev['y_true'] == classes.index(cls)
+                if mask.any():
+                    wandb.run.summary[f"best_dev_error/{cls}_to_Unconfident"] = float(
+                        (dev['y_pred'][mask] == classes.index("Unconfident")).mean())
         logger.info(f"★ New best macro-F1 {max_f1:.4f} (epoch {epoch}) — saved.")
     else:
         epochs_no_improve += 1
@@ -836,5 +923,11 @@ if args.eval_test and "test" in total_dataloader:
     except Exception as e:
         logger.warning(f"Test CM log failed: {e}")
 
+wandb.run.summary["optimizer_updates"] = optimizer_updates
+with open(os.path.join(MODEL_PATH, "run_result.json"), "w", encoding="utf-8") as result_file:
+    json.dump({"best_dev_macro_f1": float(max_f1), "best_epoch": int(best_epoch),
+               "optimizer_updates": optimizer_updates, "test_evaluated": bool(args.eval_test),
+               "wandb_url": wandb.run.get_url(), "run_name": args.run_name},
+              result_file, ensure_ascii=False, indent=2)
 wandb.finish()
 logger.info("Done.")
