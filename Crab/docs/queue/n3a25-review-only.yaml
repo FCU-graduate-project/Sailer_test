@@ -1,0 +1,48 @@
+# REVIEW ONLY. Queue RAM is validated; real N3 own-resume acceptance remains pending.
+# Uses a NEW queue job/output; never resumes historical A25 artifacts.
+# Keep pause_mode none until genuine model epoch_v1 acceptance passes.
+name: n3a25-queue-review-s42
+submitter: brant
+cwd: /home/brant/Project/SAILER_test/Crab
+urgent: true
+pause_mode: none
+resources:
+  memory_high_mb: 16384
+  memory_max_mb: 20480
+  memory_swap_max_mb: 0
+  oom_policy: kill
+  memory_oom_group: true
+  cpu_quota_percent: 200
+  tasks_max: 128
+env:
+  CRAB_QUEUE_ACCEPTANCE_APPROVED: "NO"
+  OMP_NUM_THREADS: "1"
+  OPENBLAS_NUM_THREADS: "1"
+  MKL_NUM_THREADS: "1"
+  TOKENIZERS_PARALLELISM: "false"
+  HF_HUB_OFFLINE: "1"
+  TRANSFORMERS_OFFLINE: "1"
+  WANDB_MODE: online
+command: >-
+  if [ "$CRAB_QUEUE_ACCEPTANCE_APPROVED" != "YES" ]; then
+  echo 'Review-only template: real N3 own-resume acceptance is not approved.' >&2;
+  exit 64; fi;
+  exec /home/brant/Project/SAILER_test/Crab/.venv/bin/python -B
+  /home/brant/Project/SAILER_test/Crab/bin/run_crab_queue_job.py --
+  --model_path "$TQ_OUTPUT_DIR"
+  --df_path /home/brant/Project/SAILER_test/Crab/experiments/n3_phase_a_long12_20260909/n3a25_train_dev_test.csv
+  --ssl_type facebook/wav2vec2-xls-r-300m
+  --text_model_path FacebookAI/xlm-roberta-large
+  --pre_trained_path /home/brant/Project/SAILER_test/Crab/experiments/strategyA_xlsr_xlmr_lora
+  --weights_json /home/brant/Project/SAILER_test/Crab/data/nnime_class_weights.json
+  --wav_base_dir ""
+  --classes_list Excited Unconfident Neutral_3Class
+  --seed 42 --batch_size 16 --accumulation_steps 4 --num_workers 0
+  --epochs 10 --early_stop_patience 0
+  --lr 5e-5 --encoder_lr 2e-5
+  --ft_mode lora --lora_rank 16 --lora_alpha 32 --lora_dropout 0.1
+  --lora_warmstart --warm_start_ser --require_warmstart
+  --contrastive_weight 2 --grad_clip 1 --fusion_hidden_dim 512 --text_max_len 128
+  --no_eval_test --no_pin_memory
+  --project_name Crab_N3_experiment --wandb_entity d1249119-feng-chia-university
+  --wandb_group n3-queue-new-entry-unqualified --run_name n3a25-queue-s42-new-entry
