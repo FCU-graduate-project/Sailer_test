@@ -12,23 +12,7 @@ import run_n3_multiseed_safe as runner
 
 class MultiseedTests(unittest.TestCase):
     def setUp(self):
-        # Public CPU fixture: no private campaign, transcripts, audio or weights.
-        self.original = {
-            "python": sys.executable, "crab_root": str(BIN.parent),
-            "common_cli": {"seed": 42, "contrastive_weight": 2, "epochs": 10,
-                           "early_stop_patience": 5, "wandb_group": "fixture"},
-            "common_flags": ["--no_eval_test"],
-            "arms": [{"training_csv": f"/fixture/a{dose}.csv",
-                      "metadata_json": f"/fixture/a{dose}.json",
-                      "run_name": f"fixture-a{dose}"} for dose in (25, 50, 75)],
-        }
-        def read_fixture(path):
-            if Path(path) == runner.ORIGINAL / "campaign.json":
-                return copy.deepcopy(self.original)
-            raise AssertionError(f"Unexpected non-fixture read: {path}")
-        reader = patch.object(runner, "read", side_effect=read_fixture)
-        reader.start()
-        self.addCleanup(reader.stop)
+        self.original = runner.read(runner.ORIGINAL / "campaign.json")
 
     def test_seed_override_does_not_mutate_common_config(self):
         config = copy.deepcopy(self.original)
