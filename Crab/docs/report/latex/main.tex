@@ -1,0 +1,49 @@
+% !TeX program = xelatex
+% Compile with XeLaTeX (twice), or Tectonic. No shell escape required.
+\documentclass[UTF8,12pt,a4paper,oneside,fontset=fandol]{ctexrep}
+\usepackage[margin=25mm,headheight=16pt]{geometry}
+\usepackage{amsmath,amssymb,graphicx,booktabs,tabularx}
+\usepackage{setspace,fancyhdr,caption,placeins}
+\usepackage[hidelinks,unicode]{hyperref}
+\newcommand{\planned}[1]{\par\noindent［#1］\par}
+\IfFontExistsTF{Noto Serif CJK TC}{
+  \setCJKmainfont{Noto Serif CJK TC}
+  \setCJKsansfont{Noto Sans CJK TC}
+}{ }
+\IfFontExistsTF{TeX Gyre Termes}{\setmainfont{TeX Gyre Termes}}{ }
+\IfFontExistsTF{DejaVu Sans}{
+  \newfontfamily\indicatorfont{DejaVu Sans}
+  \newcommand{\matchone}{\mathord{\text{\indicatorfont 𝟙}}}
+}{
+  \newcommand{\matchone}{\mathbf{1}}
+}
+\setstretch{1.32}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.2em}
+\widowpenalty=10000
+\clubpenalty=10000
+\setlength{\emergencystretch}{2em}
+\setlength{\textfloatsep}{16pt plus 3pt minus 3pt}
+\captionsetup{font=small,labelfont=bf,labelsep=quad}
+\renewcommand{\figurename}{圖}
+\renewcommand{\tablename}{表}
+\renewcommand{\thefigure}{\thechapter-\arabic{figure}}
+\renewcommand{\thetable}{\thechapter-\arabic{table}}
+\renewcommand{\theequation}{\thechapter-\arabic{equation}}
+\ctexset{
+  chapter={format=\centering\LARGE\bfseries,beforeskip=8pt,afterskip=22pt},
+  section={format=\large\bfseries,beforeskip=18pt,afterskip=8pt},
+  subsection={format=\normalsize\bfseries,beforeskip=12pt,afterskip=5pt}
+}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small 情緒辨識機制}
+\fancyhead[R]{\small 畢業專題結報}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.3pt}
+\fancypagestyle{plain}{\fancyhf{}\fancyfoot[C]{\thepage}\renewcommand{\headrulewidth}{0pt}}
+\hypersetup{pdftitle={第二章 情緒辨識機制},pdfsubject={章節架構與內容配置}}
+\begin{document}
+\setcounter{chapter}{1}
+\input{chapter2.tex}
+\end{document}

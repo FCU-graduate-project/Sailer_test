@@ -1,0 +1,308 @@
+% !TeX program = xelatex
+\documentclass[UTF8,12pt,a4paper,landscape,fontset=fandol]{ctexart}
+\usepackage[left=18mm,right=18mm,top=18mm,bottom=16mm,headheight=15pt]{geometry}
+\usepackage{graphicx,booktabs,tabularx,array,amsmath,xcolor,fancyhdr}
+\usepackage[hidelinks,unicode]{hyperref}
+\IfFontExistsTF{Noto Sans CJK TC}{\setCJKmainfont{Noto Sans CJK TC}\setCJKsansfont{Noto Sans CJK TC}}{}
+\IfFontExistsTF{TeX Gyre Heros}{\setmainfont{TeX Gyre Heros}}{}
+\definecolor{navy}{HTML}{18344B}
+\definecolor{teal}{HTML}{2B8594}
+\definecolor{purple}{HTML}{8357A5}
+\definecolor{light}{HTML}{EDF4F6}
+\definecolor{muted}{HTML}{65758B}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{3pt}
+\AtBeginDocument{\fontsize{11.5}{15}\selectfont}
+\setlength{\emergencystretch}{2em}
+\renewcommand{\arraystretch}{1.16}
+\setlength{\tabcolsep}{7pt}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\color{muted} N3 中文面試情緒辨識｜TTS 擴增會議資料}
+\fancyhead[R]{\small\color{muted} 2026/09/18 會議}
+\fancyfoot[L]{\scriptsize\color{muted} 資料核對：2026/09/17；本實驗線最新 Test：09/14}
+\fancyfoot[R]{\small\color{muted}\thepage}
+\renewcommand{\headrulewidth}{0.3pt}
+\newcommand{\sheet}[2]{\clearpage{\color{navy}\fontsize{21}{26}\selectfont\bfseries #1\par}\vspace{3pt}{\color{teal}\fontsize{12.5}{17}\selectfont #2\par}\vspace{4pt}}
+\newcommand{\takeaway}[1]{\par\vspace{5pt}\colorbox{light}{\parbox{\dimexpr\linewidth-2\fboxsep}{\strut\textbf{重點：}#1\strut}}\par}
+\newcommand{\source}[1]{\par\vspace{1pt}{\scriptsize\color{muted}證據：#1（來源索引見第 17 頁；完整路徑見隨附 Markdown）。}\par}
+\newcommand{\fig}[2]{\par\vspace{3pt}{\centering\includegraphics[width=#2\linewidth]{assets/#1.pdf}\par}\vspace{3pt}}
+\newcommand{\tbl}[1]{\par\vspace{3pt}{\centering\input{tables/#1.tex}\par}\vspace{3pt}}
+\hypersetup{pdftitle={N3 中文情緒辨識：TTS 語料、實驗與結果比較},pdfsubject={2026年9月18日會議資料；本機實驗證據核對至9月17日}}
+\begin{document}
+
+\sheet{01｜這輪 TTS 實驗，想回答什麼？}{研究問題：補充面試情境的不自信語料，能否改善中文三類情緒辨識？}
+\begin{center}
+\begin{tabularx}{\linewidth}{XXX}
+\toprule
+\textbf{\Large 628 筆／20.56\%} & \textbf{\Large 19 個訓練 run} & \textbf{\Large 60.84\%}\\
+NNIME Train 的 U 類 & 已完成；另有 7 組 Test & 本實驗線最高已記錄 Test Macro F1\\
+\bottomrule
+\end{tabularx}
+\end{center}
+\begin{tabularx}{\linewidth}{p{.22\linewidth}X}
+\toprule
+會議問題 & 目前回答\\
+\midrule
+U 是不是「超級少」？ & 三類最少，但約占五分之一，不是極端稀有。更值得檢查的是情緒子類與面試語境的差異。\\
+只補 U 有沒有訊號？ & 舊 A 的 Test U F1 都高於原 N3，但中性 N F1 都下降；整體增益有限。\\
+長片段加多少較有希望？ & 新 A 三 seed：A75 平均 Dev 55.91\%，樣本標準差 0.13 pp；本批較一致。\\
+匹配短音訊比較好嗎？ & 同配方 A/B Dev：B25、B50 下降；B75 僅 +0.18 pp，未呈現一致優勢。\\
+離 65\% 目標多遠？ & 最高已記錄 Test 60.84\%，相差 4.16 pp；尚未達標。\\
+\bottomrule
+\end{tabularx}
+\takeaway{從「U 數量最少」出發，現在要進一步區分：\textbf{缺數量、缺面試型情緒，還是生成／切段的品質問題？}}
+閱讀路線：資料來源與映射（2–6）$\rightarrow$ TTS 與設計（7–9）$\rightarrow$ 結果（10–14）$\rightarrow$ 會議決策（15）。\\
+口徑：E＝興奮、U＝不自信、N＝中性；pp＝百分點。評估使用 NNIME 真人音訊＋資料集逐字稿，不是線上 ASR 的系統成績。
+\source{S1–S8；所有分數取完成 run 的最佳 Dev checkpoint。}
+
+\sheet{02｜當時為什麼選這些資料？}{兩階段各有目的：先建立雙語基礎，再適配中文互動語音。}
+\begin{center}
+\fbox{\parbox[c][17mm][c]{.29\linewidth}{\centering MSP-Podcast 30,000\\＋EmotionTalk 11,744}}
+\quad$\longrightarrow$\quad
+\fbox{\parbox[c][17mm][c]{.15\linewidth}{\centering V1 雙語骨幹}}
+\quad$\longrightarrow$\quad
+\fbox{\parbox[c][17mm][c]{.35\linewidth}{\centering NNIME Train 3,054＋指定 TTS\\每組獨立 stage 2 微調}}
+\end{center}
+\begin{tabularx}{\linewidth}{p{.17\linewidth}p{.16\linewidth}X}
+\toprule
+資料來源 & 實際 Train 使用量 & 在 N3 沿革中的角色／選擇考量\\
+\midrule
+MSP-Podcast & 30,000（V1） & 英文情緒語音。從 MSP Train 隨機抽取，seed42；建置程式的目的為降低原本 EN/ZH 約 10:1 的量差，之後再作語言平衡抽樣。\\
+EmotionTalk & 11,744（V1） & 映射與篩選後的中文 Train，提供中文雙人互動語料；與 MSP 共建雙語骨幹。\\
+NNIME & 3,054（stage 2） & 台灣華語即興互動語料；使用本地標註與繁體逐字稿，保留獨立真人 Dev／Test。\\
+自建面試 U TTS & 157／314／471 & 補面試相關表達，只加入 stage 2 Train；本輪沒有把 MSP／EmotionTalk 再混進 stage 2。\\
+\bottomrule
+\end{tabularx}
+\vspace{7pt}
+\begin{center}
+\small
+\begin{tabular}{lrrrr}
+\toprule
+實際 Train manifest & E & U & N & 合計\\
+\midrule
+V1：MSP 子集 & 10,934 & 5,183 & 13,883 & 30,000\\
+V1：EmotionTalk & 2,807 & 1,369 & 7,568 & 11,744\\
+V1 合計 & 13,741（32.92\%） & 6,552（15.70\%） & 21,451（51.39\%） & 41,744\\
+\bottomrule
+\end{tabular}
+\end{center}
+\takeaway{N3 不是只用 3,054 筆從頭訓練。所有 A／CL／B 都從同一個 V1 出發，\textbf{不是從原 N3 或上一個實驗接著訓練}。V1 有語言平衡抽樣，manifest 比例不等於實際抽樣比例。}
+\source{S1、S3；資料選擇沿用既有 N3 路線，本輪沒有重做資料集選型實驗。}
+
+\sheet{03｜NNIME 的 U 最少，但不是極端稀少}{應修正的說法：Train 中 U 占 20.56\%，與 E 相差 180 筆；N 約為 U 的 2.58 倍。}
+\fig{nnime_distribution}{.92}
+{\small\tbl{splits}}
+\takeaway{只補 U 的動機是「\textbf{相對少＋服務重點＋原 N3 的 U F1 最低}」，不是「幾乎沒有 U」。原 N3 Test：E 58.25\%、U 48.23\%、N 69.82\%。}
+原訓練已使用加權 CE：E＝1.2599、U＝1.6210、N＝0.6292；並非完全沒有補償不平衡。Dev／Test 的 U 比例也不同於 Train，但 Macro F1 是三類 F1 等權平均。
+\source{S1（CSV 重新計數）、S3、S4（原 N3 Test）。}
+
+\sheet{04｜NNIME 怎麼映射成三類？}{依現行 mapping v3 的實際集合：62 個細情緒標籤 $\rightarrow$ E／U／N／排除票。}
+\fig{nnime_mapping}{1}
+\takeaway{「U 不自信」是本專案的\textbf{較廣負向／低自信映射類}，包含悲傷、恐懼、挫折等，不等同心理學自信程度，也不只包含面試時的猶豫。}
+原標籤字形照程式保留，例如「害躁」「莫名奇妙」；含全形逗號的標籤視為一個原子，只有半形冒號「:」用於拆票。不是從 NNIME 某個既有八類標籤直接一對一映射。
+\source{S1：build\_nnime\_crab\_csv.py 的集合與 classify\_row；不是檔頭舊註解。}
+
+\sheet{05｜從原始標註到 4,300 筆：還有哪些規則？}{先篩選語音，再把細標籤票合併，最後維持 team-based split。}
+\fig{nnime_pipeline}{1}
+\begin{tabularx}{\linewidth}{p{.24\linewidth}X}
+\toprule
+容易誤解的地方 & 現行實際規則\\
+\midrule
+每位評分者是否只有一票？ & 否。多標籤會拆成多個原子票；不是先把每位評分者壓成一個 E／U／N。\\
+出現 DROP 就整句刪除？ & 否。只有無 E/U/N 票，或 DROP 票嚴格大於 E＋U＋N，才不保留。\\
+平票怎麼辦？ & 程式依遍歷時最先出現的類別解平票；本次唯讀重算，保留集 275／4,300（6.40\%）有最高票平手。\\
+資料有因此改動嗎？ & 沒有。4,300 列標籤與 split 全部和既有 CSV 一致；本次只增加稽核說明。\\
+\bottomrule
+\end{tabularx}
+\takeaway{現行標籤是歷史可重現規則，不是「至少 4／6 人一致」。未來若調整平票或情緒定義，必須另建資料版本，不能改舊標籤後沿用舊成績。}
+\source{S1；本次重新讀取 2021 中文標註表與現有 CSV，未執行資料重建。}
+
+\sheet{06｜U 的不足：面試型表達，還是總量？}{只在 628 筆 Train U 中檢查：是否至少一位評分者提及該家族。}
+\fig{u_family}{.95}
+\begin{tabularx}{\linewidth}{p{.25\linewidth}X}
+\toprule
+已觀察到 & 對自建 TTS 的意義\\
+\midrule
+悲傷／低落覆蓋 518 筆；挫折／疑惑 407 筆 & NNIME 的廣義 U 可能較多表達低落與挫折，不能假定都與面試沒把握相同。\\
+恐懼／焦慮家族 270 筆 & 家族很廣，不能把 270 全叫作「面試緊張」。\\
+尷尬／低聲下氣家族 7 筆 & 社交型低自信是值得補充的方向；這是原標籤覆蓋，不代表其餘音訊完全沒有該語氣。\\
+新 TTS 使用面試回答 & 可補領域內容，但若面試文本、單聲線、合成來源全部只配 U，也有學到捷徑的風險。\\
+\bottomrule
+\end{tabularx}
+\takeaway{較精確的研究動機是：\textbf{補面試場景中較少覆蓋的猶豫、沒把握與自我修正表達}，同時檢查它與既有 U 定義是否一致。}
+家族可共現，四列不可相加，也不是互斥子類或 TTS 生成配額。後續可用同題材不同語氣、多聲線與真人面試評估檢查模型是否真的利用情緒線索。
+\source{S1：原始六位 rater 標註與 Train U 成員重新交叉計數。}
+
+\sheet{07｜25／50／75\% 怎麼來？為什麼是 157／314／471？}{分母固定為 NNIME Train U＝628，不是全部真人 3,054，也不是混合 Train 占比。}
+\[
+\text{新增 U TTS} = 628 \times \{25\%,50\%,75\%\}=\{157,314,471\}
+\]
+\tbl{dose}
+\begin{tabularx}{\linewidth}{p{.21\linewidth}X}
+\toprule
+當時的設計選擇 & 理由與實際處理\\
+\midrule
+只增加 U & 回應服務重點與當時補 U 的方向；N、E 真人數量固定，先觀察單類擴增的劑量反應。\\
+25／50／75 三個劑量 & 以固定 157 筆逐步增加；是預先設定的比較級距，\textbf{不是已證明的最佳比例，也不是功效分析求得}。\\
+巢狀子集 & 157 $\subset$ 314 $\subset$ 471；每個 parent 最多一段，小集合保留在大集合，降低成員完全換掉的干擾。\\
+500 個原始回答 & Long12 庫實際為 576 支衍生音檔：412 直接保留＋12 去靜音＋76 各切兩段。不是 576 個獨立回答。\\
+來源與訓練用途 & 全部同一 Zephyr 聲線；三組 prompt 大致平衡。選中 TTS 全部 Train；真人 Dev／Test 不變。\\
+\bottomrule
+\end{tabularx}
+\takeaway{75\% 指「比真人 U 再加 75\%」：混合 Train 的 U 為 31.18\%，TTS 只占總筆數 13.36\%。\textbf{本輪不以 4:4:3 為目標，也不把 V1 納入分母。}}
+\source{S2、A 三組 metadata 與凍結 manifest。全部 TTS 仍是未完成人工情緒／文字驗收的探索資料。}
+
+\sheet{08｜A 與 B：比較的是兩種資料製作策略}{A＝Long12 長片段；B＝同 parent 的 Match-min1 短片段。不是「完全沒切」對「只改秒數」。}
+\fig{duration_match}{.70}
+{\small\tbl{duration}}
+\begin{tabularx}{\linewidth}{p{.19\linewidth}X}
+\toprule
+長度匹配規則 & 真人 U 628 筆先取有效長度 $\min(\text{原秒數},12)$；510 筆 $\geq$1 秒作目標分布，118 筆 $<$1 秒只不納入目標，仍留真人 Train。\\
+切段方式 & 471 段：423 個標點窗口、4 個停頓窗口、44 個 ASR token 窗口；同步換為切段文字。標點／token 邊界不保證情緒完整。\\
+\bottomrule
+\end{tabularx}
+\takeaway{B75 約 81.3\% 短於 4 秒；同為 471 筆，TTS 時長僅 A75 的 30.3\%。\textbf{音訊資訊、文字上下文與正規化都會一起改變}，不能把分數差完全歸因於「短比較好／壞」。}
+\source{S2、S7 build\_report 與切段程式。秒數占比不等於 loss 權重；Train 每筆依原訓練方式使用。}
+
+\sheet{09｜實驗路線：已完成 19 個訓練 run}{所有 run 獨立載入同 V1；以 Dev Macro F1 選 checkpoint，Test 不含 TTS。}
+\begin{center}
+\begin{tabular}{lrlcl}
+\toprule
+階段 & run 數 & 比較變因 & epochs／patience & 評估狀態\\
+\midrule
+舊 A Long12 & 3 & 劑量 25／50／75；seed42 & 最多 10／5 & Dev＋Test\\
+CL 消融 & 4 & 固定 A25；CL 0／1／2／3 & 最多 10／5 & Dev；Test 未做\\
+新 A 多 seed & 9 & 三劑量 $\times$ seeds42／43／44 & 滿 10／0 & Dev；Test 未做\\
+B Match-min1 & 3 & 三劑量；seed42 & 滿 10／0 & Dev＋Test\\
+\bottomrule
+\end{tabular}
+\end{center}
+\begin{tabularx}{\linewidth}{p{.22\linewidth}X}
+\toprule
+共同核心配方 & 設定\\
+\midrule
+模型／初始化 & XLS-R-300M＋XLM-RoBERTa-Large；V1 Audio/Text LoRA＋SER head；各組新 optimizer。\\
+更新方式 & LoRA rank16、alpha32、dropout0.1；head LR $5\times10^{-5}$、encoder LR $2\times10^{-5}$；AdamW＋cosine。\\
+Batch／輸入 & micro-batch4、累積4（名義 batch16）；16 kHz、前12秒、128 tokens；CL 仍在 micro-batch4 計算。\\
+Loss／抽樣 & 固定加權 CE＋CL（除 CL 消融外均權重2）；本輪無 class-balanced sampler，CE 權重不因加 TTS 重算。\\
+正規化／評估 & 各組以自己的 Train 重算 mean/std；Dev／Test 沿用。Dev608／Test638，同真人切分。\\
+\bottomrule
+\end{tabularx}
+\takeaway{比較分三層：\textbf{舊 A 看歷史擴增訊號；新 A 看 seed 變異；新 A seed42 對 B seed42 看製作策略}。不能混用三 seed 平均、單 seed 與不同 early-stop 版本。}
+\source{S3–S8。19 次訓練之外，獨立 Test 共 7 組 checkpoint（含原 N3）；本次只整理，不新增訓練。}
+
+\sheet{10｜舊 A：U 類改善，但中性類有代價}{歷史 seed42、最多 10 輪／patience5；每組以自己的最佳 Dev 權重測 Test。}
+\fig{historical_results}{.9}
+{\small\tbl{historical}}
+\begin{tabularx}{\linewidth}{p{.18\linewidth}X}
+\toprule
+依 Dev 選擇 & 舊 A25 的 55.05\% 最高，對應 Test 59.25\%；舊 A75 Test 59.67\% 是事後描述，不回頭換選模規則。\\
+U 的取捨 & 舊 A50 相對 N3 多抓到 25 筆 U（75→100），但 N→U 由38→76、E→U 由33→44；U F1 上升不代表誤報也改善。\\
+\bottomrule
+\end{tabularx}
+\takeaway{補 U 有初步訊號，但\textbf{三類不是一起進步}。Macro F1 的變化，要看 E／U 的增益能否抵銷 N 的退步。}
+\source{S4；圖表兩側是不同 split，Dev 與 Test 的差不是「提升幅度」。舊 N3 Dev 52.83\% 取原 log 四捨五入值。}
+
+\sheet{11｜CL 消融：保留對比學習，有正面訊號}{固定 A25＋seed42；CL0 只關閉 stage 2 的 CL，不會消除 V1 的訓練歷史。}
+\fig{cl_results}{.72}
+\tbl{cl}
+\begin{tabularx}{\linewidth}{p{.2\linewidth}X}
+\toprule
+為何固定 A25？ & 因舊 A25 的整體 Dev Macro F1 最高，不是因為它的 U F1 最高。\\
+主要觀察 & CL1／2／3 都高於 CL0；CL2 對 CL0 約 +3.36 pp，CL2 對 CL3 僅 +0.29 pp。\\
+目前使用方式 & 後續新 A／B 固定 CL2，先把資料與 seed 問題拆開；此批只有 seed42，不能宣稱中文的穩定最佳權重已確定。\\
+\bottomrule
+\end{tabularx}
+\takeaway{「有無 CL」值得測；目前支持繼續使用 CL2 作共同配方，\textbf{不支持把 CL2 稱為普遍最佳值}。}
+\source{S5；各組相同 patience5 政策、實際輪數不同；四組未做 Test。}
+
+\sheet{12｜多 seed 後：A75 是較有希望的候選}{新版本統一跑滿 10 輪；圖中點為每個 seed 的最佳 Dev，誤差棒為三 seed 樣本標準差。}
+\fig{multiseed_results}{.85}
+\tbl{seeds}
+\begin{tabularx}{\linewidth}{p{.2\linewidth}X}
+\toprule
+看單次最高 & A25 seed42＝57.22\%，但另外兩次只有54.12\%、53.67\%；只報最好一次會忽略波動。\\
+看同 seed 配對 & A75 對 A25 勝 2／3 次；對 A50 勝 3／3 次。A75 平均較 A25 高約0.90 pp。\\
+仍缺的對照 & 本批沒有同環境、滿10輪的 0\% TTS 多 seed 真人對照；全部新 A 還沒有 Test。\\
+\bottomrule
+\end{tabularx}
+\takeaway{目前先把 A75 列為\textbf{較有希望}，不是已證明穩定勝出。三 seed、固定一套 TTS 選樣，尚不涵蓋換文本／聲線／TTS 成員的變異。}
+\source{S6；標準差 ddof=1，不是信賴區間；圖 y 軸 51–59\% 放大差異。}
+
+\sheet{13｜A/B 配對 Dev：短片段沒有一致優勢}{同劑量、同 parent、seed42、CL2、滿10輪；只比較新 A，不使用舊 A 或三 seed 平均。}
+\fig{paired_ab}{.86}
+{\small\tbl{paired}}
+\begin{tabularx}{\linewidth}{p{.23\linewidth}X}
+\toprule
+已確認的現象 & B25／B50 的 U precision 略升，recall 卻大降；190 筆真人 U 中，分別少抓到37／28筆。B75 與 A75 接近。\\
+優先檢查的假說 & 切掉遲疑、停頓、語尾或文字上下文；片段仍沿用 U 卻可能已不像 U；文本對齊、正規化或訓練變異也可能有影響。\\
+\bottomrule
+\end{tabularx}
+\takeaway{\textbf{長度分布相似，不等於情緒資訊相似。}沒有人工驗收是證據缺口，但尚不能說它就是退步原因；先做長短配對盲聽與同一 Dev 的逐筆錯例分析。}
+\source{S6、S7；U 正確筆數由原 log support／recall 相容整數換算，不是本次新增推論。}
+
+\sheet{14｜B Test 已完成：B25 與 B75 很接近}{2026/09/14 完成；每組 638 筆真人音訊＋資料集逐字稿，最佳 epoch 在測試前依 Dev 固定。}
+{\small\setlength{\tabcolsep}{5pt}\tbl{btest}}
+\fig{b_confusion}{.93}
+\begin{tabularx}{\linewidth}{p{.18\linewidth}X}
+\toprule
+B75 vs B25 & Test Macro F1 只差 +0.11 pp。B75 多抓到18筆 U（73→91），但非U誤報為U多37筆（56→93），其中 N→U 為31→63。\\
+與原 N3 相比 & B75 的 Test 60.84\% 比原 N3 58.77\% 高約2.07 pp；僅作跨版本歷史參考，不是同環境重訓的純 TTS 效果。\\
+\bottomrule
+\end{tabularx}
+\takeaway{最高已記錄 Test 為 B75 60.84\%，距65\%仍差4.16 pp。\textbf{新版 A 的 Test 還未做}，目前不能用 Test 下「切短優於長片段」的結論。}
+\source{S8；矩陣列＝真實、欄＝預測；各格上方筆數、下方列內比例。B 只有 seed42。}
+
+\sheet{15｜會議結論與下一步：先補證據，再擴大語料}{本頁是建議與待決事項，不代表已批准或排入訓練 queue。}
+\begin{tabularx}{\linewidth}{p{.12\linewidth}p{.32\linewidth}X}
+\toprule
+優先順序 & 建議動作 & 要回答的問題／控制條件\\
+\midrule
+1 & 補同環境 0\% TTS $\times$ 3 seeds & 同 V1、滿10輪、CL2；分離重訓變異與加 TTS 的效果，不只拿舊 N3 當基線。\\
+1 & 補新版 A seed42 三組 Test & 沿用已選定 Dev checkpoint，事先固定三組都報；與既有 B 三組建立同配方 Test 對照，不依 Test 重選 epoch。\\
+1 & 長／短片段配對盲聽＋文字核對 & 檢查切後 U 是否仍可辨、逐字稿與音訊是否一致；既有未驗收結果保留，不回填成「訓練前已驗收」。\\
+2 & Dev 錯例與分長度分析 & 看 U→N 或 U→E、類別支持筆數及機率變化，驗證短片段假說，不用 Test 矩陣代替 Dev 分析。\\
+2 & 固定 U 策略後，補興奮 E TTS & 將題材／聲線與情緒分離：同面試題材做不同語氣、增加聲線；一次只改主要比較因素。\\
+後續 & 真人台灣面試域獨立評估 & 使用有授權且說話者不重疊的真人評估資料，確認服務場景與 ASR 條件下的實際效果。\\
+\bottomrule
+\end{tabularx}
+\vspace{7pt}
+\textbf{E 數量的既有討論（尚未生成／訓練確認）：}
+若固定既有 U75＝471 筆 TTS，只加810筆合格 E，stage 2 為 N1,618／E1,618／U1,099，約4:4:2.72。
+精確4:4:3需相對同一U75基準再加N2／E812／U116，變成1,620／1,620／1,215。
+\takeaway{建議老師先確認三件事：\textbf{U 是否維持現行廣義映射；是否補 0\% 對照與新版 A Test；下一批 E 的品質與對照規格。}先加 E 不等於現在就一起加 N／U，也不以比例好看取代辨識結果。}
+本輪結果支持「擴增策略值得繼續診斷」，還不足以宣布65\%目標達成或正式部署模型已選定。
+\source{S2、S3 的既有 E／4:4:3 討論；新增優先順序為本次會議建議。}
+
+\sheet{16｜附錄：19 個完成 run，一次查清楚}{同名舊 A 與新 A 不合併；「最佳／實跑輪」從 1 起算。}
+{\fontsize{9.5}{11.5}\selectfont\renewcommand{\arraystretch}{1.04}\setlength{\tabcolsep}{10pt}\tbl{inventory}}
+{\small Test 共7組＝表內舊A三組＋B三組＋原N3（58.77\%）。訓練 JSON 的 test\_evaluated=false 保留當時狀態，後來 Test 另有 test\_result.json。}
+{\small W\&B project：\href{https://wandb.ai/d1249119-feng-chia-university/Crab_N3_experiment}{Crab\_N3\_experiment}；run ID 可接到該 project 的 /runs/ 後查詢。同步狀態依本機紀錄，本次未呼叫 W\&B。}
+\source{S4–S8 的原始 JSON／最佳輪 log；表格由程式生成。}
+
+\sheet{17｜附錄：時長口徑、映射稽核與證據索引}{本份為會議快照；沒有改原 CSV、音訊、權重、既有實驗報告或結報第二章。}
+{\small\tbl{train_duration}}
+{\small
+Train 原音訊共117.47分鐘；套前12秒輸入上限後為112.76分鐘（不計padding）。
+U有118／628＝18.79\%短於1秒；Match-min1只排除其「目標分布」，未刪真人片段。
+切段參考的510筆平均有效長度2.959秒；部分原檔超12秒，先依模型上限記為12秒。
+}
+\par
+\begin{tabularx}{\linewidth}{p{.08\linewidth}p{.31\linewidth}X}
+\toprule
+代號 & 證據 & 本次核對\\
+\midrule
+S1 & NNIME 標註表、映射程式與 CSV & 5,596→4,738→4,300；4,300標籤／split一致；275最高票平手；Train U家族覆蓋。\\
+S2 & DATASET\_AND\_REVIEW.md & Long12來源、單聲線、Train-only、157/314/471巢狀清單、人工QC狀態。\\
+S3 & TRAINING\_PLAN.md／campaign & V1與stage2、共同超參數、early-stop版本及E候選計畫；V1 CSV另重新計數。\\
+S4 & 舊A訓練＋9/10 Test JSON & 舊A三組／原N3，Test矩陣與F1重新計算一致。\\
+S5 & CL四組 run\_result＋最佳輪log & 4個CL設定、Dev最佳值、實跑輪數、逐類表現。\\
+S6 & 新A九組＋aggregate\_dev.json & 9個run、各seed、平均／樣本標準差重新計算一致。\\
+S7 & B三組＋build\_report.json & A/B配對Dev、切段分布與來源、未人工QC。\\
+S8 & 9/14 B Test三組 JSON & 三組638筆；矩陣與逐類／Macro F1重新計算一致。\\
+\bottomrule
+\end{tabularx}
+\takeaway{隨附 evidence\_summary.json 保存54個來源檔案的SHA256；圖與表可由 build\_figures.py 重製。\textbf{只輸出彙總資料，未打包真人音訊、原始逐字稿或模型權重。}}
+{\small 平票稽核：E/N 131、U/N 76、E/U 49、三類19，共275。此處是既有規則的透明說明，不是新改標或已完成仲裁。}
+\end{document}

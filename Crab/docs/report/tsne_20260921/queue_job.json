@@ -1,0 +1,29 @@
+{
+  "name": "CRAB-report-tsne-existing-checkpoints-20260921",
+  "submitter": "Kaiser0207",
+  "cwd": "/home/brant/Project/SAILER_test/Crab",
+  "command": "exec /home/brant/Project/SAILER_test/Crab/.venv/bin/python -B /home/brant/Project/SAILER_test/Crab/docs/report/tsne_20260921/extract_features.py --run",
+  "urgent": true,
+  "pause_mode": "none",
+  "env": {
+    "OMP_NUM_THREADS": "2",
+    "OPENBLAS_NUM_THREADS": "1",
+    "MKL_NUM_THREADS": "2",
+    "NUMEXPR_NUM_THREADS": "1",
+    "TOKENIZERS_PARALLELISM": "false",
+    "HF_HUB_OFFLINE": "1",
+    "TRANSFORMERS_OFFLINE": "1",
+    "WANDB_MODE": "disabled",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONUNBUFFERED": "1"
+  },
+  "resources": {
+    "memory_high_mb": 16384,
+    "memory_max_mb": 20480,
+    "memory_swap_max_mb": 0,
+    "oom_policy": "kill",
+    "memory_oom_group": true,
+    "cpu_quota_percent": 200,
+    "tasks_max": 128
+  }
+}

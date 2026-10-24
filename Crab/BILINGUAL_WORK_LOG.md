@@ -1,6 +1,6 @@
 # Crab 中英雙語化 — 工作紀錄
 
-> 用途：記錄我（執行者）做了什麼、決定了什麼、為什麼。前瞻/方案見 [`BILINGUAL_FINETUNE_PLAN.md`](BILINGUAL_FINETUNE_PLAN.md)；會議用見 [`BILINGUAL_MEETING_MEMO.md`](BILINGUAL_MEETING_MEMO.md)。
+> 用途：記錄我（執行者）做了什麼、決定了什麼、為什麼。前瞻/方案見 [`BILINGUAL_FINETUNE_PLAN.md`](BILINGUAL_FINETUNE_PLAN.md)；會議用見 [`BILINGUAL_MEETING_MEMO.md`](docs/weekly/2026-06-04_bilingual_meeting_memo/BILINGUAL_MEETING_MEMO.md)。
 
 ---
 

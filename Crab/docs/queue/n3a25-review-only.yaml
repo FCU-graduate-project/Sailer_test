@@ -1,4 +1,4 @@
-# REVIEW ONLY. Queue RAM is validated; real N3 own-resume acceptance remains pending.
+# REVIEW ONLY. Do not submit until RAM integration + real N3 acceptance are approved.
 # Uses a NEW queue job/output; never resumes historical A25 artifacts.
 # Keep pause_mode none until genuine model epoch_v1 acceptance passes.
 name: n3a25-queue-review-s42
@@ -6,14 +6,6 @@ submitter: brant
 cwd: /home/brant/Project/SAILER_test/Crab
 urgent: true
 pause_mode: none
-resources:
-  memory_high_mb: 16384
-  memory_max_mb: 20480
-  memory_swap_max_mb: 0
-  oom_policy: kill
-  memory_oom_group: true
-  cpu_quota_percent: 200
-  tasks_max: 128
 env:
   CRAB_QUEUE_ACCEPTANCE_APPROVED: "NO"
   OMP_NUM_THREADS: "1"
@@ -25,7 +17,7 @@ env:
   WANDB_MODE: online
 command: >-
   if [ "$CRAB_QUEUE_ACCEPTANCE_APPROVED" != "YES" ]; then
-  echo 'Review-only template: real N3 own-resume acceptance is not approved.' >&2;
+  echo 'Review-only template: RAM integration and real-model acceptance are not approved.' >&2;
   exit 64; fi;
   exec /home/brant/Project/SAILER_test/Crab/.venv/bin/python -B
   /home/brant/Project/SAILER_test/Crab/bin/run_crab_queue_job.py --

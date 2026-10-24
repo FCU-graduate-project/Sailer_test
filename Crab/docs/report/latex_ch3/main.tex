@@ -1,0 +1,60 @@
+% !TeX program = xelatex
+% Compile with XeLaTeX (twice) or Tectonic. No shell escape required.
+\documentclass[UTF8,12pt,a4paper,oneside,fontset=fandol]{ctexrep}
+\usepackage[margin=25mm,headheight=16pt]{geometry}
+\usepackage{amsmath,amssymb,graphicx,booktabs,tabularx,multirow}
+\usepackage{setspace,fancyhdr,caption,subcaption,placeins,wrapfig}
+\usepackage[table]{xcolor}
+\usepackage{enumitem}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,fit,calc}
+\usepackage[hidelinks,unicode]{hyperref}
+
+\IfFontExistsTF{Noto Serif CJK TC}{
+  \setCJKmainfont{Noto Serif CJK TC}
+  \setCJKsansfont{Noto Sans CJK TC}
+}{ }
+\IfFontExistsTF{TeX Gyre Termes}{\setmainfont{TeX Gyre Termes}}{ }
+
+% 待補內容：灰框標示，與正文明顯區隔，定稿時整段刪除
+\newcommand{\planned}[1]{\par\smallskip\noindent
+  \fcolorbox{gray!45}{gray!6}{\parbox{\dimexpr\linewidth-2\fboxsep-2\fboxrule\relax}{%
+  \small\color{gray!65!black}［待補］#1}}\par\smallskip}
+\newcommand{\pp}{\,pp}
+
+\setstretch{1.32}
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0.25em}
+\widowpenalty=10000
+\clubpenalty=10000
+\setlength{\emergencystretch}{2em}
+\setlength{\textfloatsep}{12pt plus 3pt minus 3pt}
+\setlength{\intextsep}{10pt plus 2pt minus 2pt}
+\setlength{\columnsep}{14pt}
+\renewcommand{\arraystretch}{1.12}
+\setlist{itemsep=0.15em,topsep=0.3em,parsep=0pt,leftmargin=2.2em}
+\captionsetup{font=small,labelfont=bf,labelsep=quad,skip=4pt}
+\captionsetup[sub]{font=small,labelformat=parens,skip=2pt}
+\renewcommand{\figurename}{圖}
+\renewcommand{\tablename}{表}
+\renewcommand{\thefigure}{\thechapter-\arabic{figure}}
+\renewcommand{\thetable}{\thechapter-\arabic{table}}
+\renewcommand{\theequation}{\thechapter-\arabic{equation}}
+\ctexset{
+  chapter={format=\centering\LARGE\bfseries,beforeskip=8pt,afterskip=20pt},
+  section={format=\large\bfseries,beforeskip=16pt,afterskip=6pt},
+  subsection={format=\normalsize\bfseries,beforeskip=10pt,afterskip=4pt}
+}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small 第三章\quad 情緒辨識機制}
+\fancyhead[R]{\small 畢業專題結報}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.3pt}
+\fancypagestyle{plain}{\fancyhf{}\fancyfoot[C]{\thepage}\renewcommand{\headrulewidth}{0pt}}
+\hypersetup{pdftitle={第三章 情緒辨識機制}}
+
+\begin{document}
+\setcounter{chapter}{2}
+\input{chapter3.tex}
+\end{document}

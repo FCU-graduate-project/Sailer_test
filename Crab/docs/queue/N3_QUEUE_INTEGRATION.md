@@ -1,6 +1,8 @@
 # N3 與 Train Queue：接入與驗收
 
-更新：2026-09-16。**Queue RAM 與「Wav2Vec2 讓位給真實 CRAB urgent」已通過小資料驗收；CRAB 自身暫停／恢復的真實數值對照仍未完成。** 不將 urgent 完整跑完的證據誤當 CRAB own-resume 資格。
+更新：2026-09-15。**模型端實作與 CPU 驗證已完成；尚未通過真實模型續訓驗收，不能宣稱已可安全正式插隊。**
+
+2026-09-27補充：[CPU複查與待GPU验收](CPU_RECHECK_AND_GPU_ACCEPTANCE_20260927.md)。40/40 CPU測試再次通過；現行queue的per-job RAM限制已補齊，今晚N3 Test也已驗證生效。完整N3暫停／續訓仍待GPU驗收，使用者目前要求不占另一邊實驗的GPU。下方9/15測試與環境細節是歷史紀錄，不直接代表現在的queue服務路徑或主機linger設定。
 
 ## 1. 路徑與範圍
 
@@ -15,11 +17,7 @@
 | CPU 測試 | `bin/test_crab_epoch_checkpoint.py` |
 | 任務範本 | [n3a25-review-only.yaml](n3a25-review-only.yaml)，預設不允許啟動 |
 
-9/15 實作未修改舊 `train_crab_lora.py`、A/B/CL campaign wrappers、frozen campaign 或歷史權重，當時只做 CPU 測試。9/16 另一次 SSAMBA 工程驗收已使用新 CRAB 入口跑小資料 urgent，見下節。這次 Git 整理只提交程式／介接文件，未啟動訓練。
-
-### 本分支發布範圍
-
-包含 N3 多 seed／B runner、B evaluator、CPU 測試及 queue 介接。不包含 NNIME 音檔／逐字稿／校準包、TTS 資料、模型權重、HF cache、frozen campaign 產物、研究暫存文件及 SSAMBA 目錄。歷史 runners 會讀取本機既有 campaign.json；這些資料刻意不發布，乾淨 clone 不是即刻可訓練的資料包。多 seed CPU 測試已改成不含研究資料的 fixture；checkpoint 的 queue 協定相容測試另需本機 Train Queue 專案，可用 TRAIN_QUEUE_ROOT 指定。缺少真實訓練依賴時不要下載或偽造 NNIME 資料來繞過檢查。
+本次不修改舊 `train_crab_lora.py`、A/B/CL campaign wrappers、frozen campaign 或歷史權重；不提交正式 queue 任務、不跑真實訓練、不 commit／push。
 
 ## 2. 正確的狀態流程
 
@@ -75,7 +73,7 @@ LoRA 的 `adapter_config.json` 常以 `inference_mode=true` 匯出。恢復時�
 - `best_model.json` 指向完整 state_dict；**不是舊 API／Test evaluator 的 adapters-only 格式**。正式評測前需另安排格式匯出／reader 驗證，不能直接把新目錄交給舊 evaluator。
 - full/partial FT、bf16 數值一致性、多 GPU、非零 workers、跨機器／硬體恢復均未取得真實驗收；目前主要目標為 N3 單卡 FP32 LoRA。
 
-## 5. RAM、磁碟及 Queue 現況
+## 5. RAM、磁碟及 Queue 端待辦
 
 新入口在 heavy stack／模型載入前檢查目前 cgroup。不得以另建巢狀獨立 systemd service 逃離 queue 的程序管理。
 
@@ -89,9 +87,9 @@ LoRA 的 `adapter_config.json` 常以 `inference_mode=true` 匯出。恢復時�
 | 本任務 memory.current | 達 19 GiB 或更小的 MemoryMax 時安全報錯 |
 | 建議 CPU／子程序限制 | CPUQuota 200%、TasksMax 128、OMP/MKL/OPENBLAS threads=1 |
 
-9/16 已核對 queue 增加 per-job `resources`，涵蓋 `memory_high_mb`、`memory_max_mb`、`memory_swap_max_mb`、`oom_policy`、`memory_oom_group`、`cpu_quota_percent`、`tasks_max`；明確指定時七欄位均必填，變更會影響 frozen fingerprint。省略 resources 的舊 job 維持既有 fingerprint 並使用 16/20 GiB 保護預設。實際 systemd／子程序 cgroup、OOM 整組退出及 API 重啟測試已通過；不需要再次實作或關閉 Crab RAM guard。
+9/15當時的queue缺少上述RAM properties。**9/27現況：現行queue已支援per-job limits，N3 Test service已實測MemoryHigh16／Max20 GiB、Swap0、CPU200%、TasksMax128生效。** 這不等於完整N3訓練／續訓已驗收；本次只重新執行CPU測試，沒有修改queue。
 
-本次以本機 `SSAMBA/resources/queue_real_acceptance_20260916.json` 核對 queue 6 個相關來源檔案 SHA256，全部相符。這是內部驗收證據位置，不隨本 Crab 分支發布。小資料實測為 Wav2Vec2 完成 epoch 1、退出75 → CRAB 48 Train／18 Dev、2 epochs、6 updates、退出0 → Wav2Vec2 自動完成 epoch 2–3，恢復後與連續路徑精確相等。CRAB `pause_mode=none`，沒有做自身暫停。不得據此放行所有 SSAMBA arms 或宣称 CRAB resume 已驗收。CRAB 觀察到的 cgroup RAM peak 約14.94 GiB，不代表全量資料峰值保證。
+建議 queue 端增加可選 per-job limits，將它們纳入 frozen spec fingerprint；設定 MemoryHigh/Max/Swap、OOMPolicy，不改 FIFO／urgent 排程。必須保留沒有新欄位的舊 job fingerprint，避免破壞已保存 checkpoint 的身份驗證。不要只在 YAML 填 queue 尚不認識的欄位，也不要關閉 Crab RAM guard。
 
 完整 snapshot 遠大於舊 adapters-only：估算每輪 = `1.2 × (所有 model tensor bytes + Adam moments 約 8 × trainable params) + 64 MiB`。啟動與每輪保存前，按剩餘輪數加 20 GiB 磁碟保留量檢查；N3 預期為每輪數 GiB，**尚未以真實模型量測**。不自動刪除任何 snapshot／舊實驗；hardlink 的 best 不額外複製內容，但 manifest 仍完整驗證。磁碟同時有其他下載／任務，啟動前應再檢查。
 
@@ -131,15 +129,11 @@ systemd-run --user --wait --pipe --collect \
 
 ## 7. 正式啟用前的驗收門檻
 
-1. Queue per-job RAM 限制與真實 service CPU probe 已通過；部署時仍需核對使用相同已驗證版本及 resources。不要修改正式資料庫來做測試。
+1. Queue per-job RAM 限制落實，並用其真實 service 啟動 CPU probe 驗證。不得改朋友現行服務／正式資料庫來做測試。
 2. 另行獲准後，在獨立小資料與新 output，用相同 N3 模型、V1、loss、FP32、LoRA、accumulation 做「連續 N 輪」對照「K 輪後退出75、重建程序、完成N輪」。目前未安排、未執行。
 3. 比較 current/best 參數、每個 optimizer moments/step、scheduler/LR、更新數、下一輪樣本順序、norm、best/early-stop、W&B ID/step；先定義 deterministic 或數值誤差門檻。
 4. 真實 queue 的人工 pause、普通工作讓位→urgent完成→自動resume、最後一輪與early-stop遇pause，以及損毀／中斷情境；確認所有子程序退出與 GPU 記憶體釋放。
 5. 通過後才把 `pause_mode` 改成 `epoch_v1`、移除範本的禁止啟動 gate。畢專新工作 `urgent: true`；急件彼此 FIFO，不會打斷另一個急件。現有普通任務若不支援 epoch_v1，只能等它正常完成。
-6. 9/16 其他授權工作已將 user linger 改為 yes；但全部登出後至少30秒零 session 的持續性觀察仍未完成，不能單憑 Linger 保證。這次 Git 整理不修改系統設定。
-
-## 8. 9/16 公開分支提交前檢查
-
-在隔離 worktree 執行多 seed runner、B runner、B evaluator、完整 checkpoint 四組 CPU 測試，共 **75/75 通過**。初次發現多 seed 測試依賴未發布的 campaign.json，已改為公開安全 fixture 後重跑通過，未複製真實資料進 Git。任務範本通過目前 queue JobSpec 的 resources 驗證，預設 gate 實測退出64。測試限制4 GiB RAM、GPU停用，沒有訓練。
+6. 全部登出後是否持續：需主機管理者確認 user linger；不自行修改此系統設定。之前 `Linger=no`，不可直接保證關掉所有 VS Code/SSH 後仍運作。
 
 結論：本文件代表 **Crab 模型端 CPU-ready**，不是 production-ready，也不是現有歷史 run 可直接接續。

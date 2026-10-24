@@ -1,0 +1,320 @@
+\chapter{情緒辨識機制}
+\label{chap:emotion}
+
+本章介紹面試練習系統的情緒辨識機制，依序說明辨識任務、整體架構與方法選用、資料處理、模型原理與中文適配、訓練設計、推論流程與回饋呈現。系統以台灣華語面試練習為主要應用情境，結合作答音訊與對應文字，辨識興奮、不自信與中性三類情緒，並將結果用於面試後的回顧與練習。
+
+\section{辨識任務與系統需求}
+\label{sec:task}
+
+\subsection{面試練習的情緒資訊需求}
+面試練習除了回答內容，也涉及作答時的語音表達。本系統將情緒辨識與面試內容評估分開處理，透過語音與文字分析，提供使用者回顧作答表達的資訊。
+
+% P01
+本模組架構採用 Crab 模型 [1]，由本團隊自行訓練權重並部署為本地端服務。系統對每一則回答進行逐句切分後輸出三類面試情緒（興奮／不自信／中性），藉此定位使用者自哪一句起展現不自信。相較於將整段回答歸納為單一標籤的作法，逐句判讀得以保留段內的情緒變化。
+
+\planned{這邊放一段面試回答的逐句辨識示例，呈現原句、對應音訊區間與三類情緒結果。}
+
+\subsection{三類任務與輸出定義}
+設第 $i$ 個片段的音訊為 $x_i$，對應文字為 $t_i$，分類標籤為
+\begin{equation}
+ y_i\in\mathcal{C},\qquad \mathcal{C}=\{E,U,N\},
+ \label{eq:classes}
+\end{equation}
+其中 $E$、$U$、$N$ 分別表示興奮（Excited）、不自信（Unconfident）與中性（Neutral\_3Class）。模型以 $f_\theta$ 表示，將音訊與文字轉換為三類 logits，並輸出對應分數：
+\begin{equation}
+ \boldsymbol z_i=f_\theta(x_i,t_i),\qquad
+ p_{i,c}=\frac{\exp(z_{i,c})}{\sum_{k\in\mathcal C}\exp(z_{i,k})},\qquad
+ \hat y_i=\mathop{\arg\max}_{c\in\mathcal C}p_{i,c}.
+ \label{eq:prediction}
+\end{equation}
+
+模型輸出包含主情緒標籤及三類分數。應用端將辨識結果與回答回合、逐字稿及音訊時間位置關聯，作為回饋頁的資料來源。
+\planned{這邊補三類情緒的操作型定義、代表性表達，以及情緒辨識與面試能力評分的分工。}
+
+\section{整體架構與方法選用}
+
+\subsection{中文雙模態模型總覽}
+中文雙模態模型如圖~\ref{fig:architecture} 所示，以音訊及其對應文字為輸入，依序完成特徵擷取、時序建模、跨模態融合與情緒分類。
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\textwidth]{assets/proposal_architecture-000.jpg}
+\caption{Crab 中文雙模態情緒辨識架構（依 Crab~\cite{crab} 架構調整編碼器）。}
+\label{fig:architecture}
+\end{figure}
+
+音訊由 wav2vec2-XLS-R-300M 擷取聲學特徵，文字由 XLM-RoBERTa-Large 擷取語意特徵。兩側特徵分別經過投影與時序建模，再透過雙向跨模態注意力交換資訊。融合後的特徵經池化與串接，送入分類頭，輸出興奮、不自信與中性三類分數。各模組的運作原理與數學式於第~\ref{sec:model_details} 節說明。
+\FloatBarrier
+
+\subsection{語音與文字資訊的互補設計}
+辨識方法可分為文字、語音與雙模態三種方向。文字提供詞彙及上下文，音訊保留語調、節奏與停頓等聲學資訊。雙模態方法同時使用兩側表徵，透過融合機制結合回答內容與語音表達。
+
+\planned{這邊比較文字、語音及雙模態情緒辨識方法，說明各方法的輸入、特徵與適用情境，並整理選用 Crab 的依據。}
+
+\subsection{Crab 的選用背景與中文適配需求}
+% P02
+本系統情緒辨識模組之模型架構採用已發表之 Crab 模型 [1]。
+
+在技術調研時（2026 年 3 月）比較各語音情緒辨識模型在 MSP-Podcast 上之表現，Crab 為當時該資料集上成績最佳者。
+
+\planned{這邊放選型時比較的方法、資料集與評估指標，搭配相關論文引用。}
+
+% P03
+Crab [1] 原研究之三個評測資料集皆為英文語料，其語音與文字編碼器(encoder)亦僅在英文條件下驗證。文字側與語音側所採用的 RoBERTa 和 WavLM 直接套用於中文面試語音時，能力明顯不足。實測顯示，以原架構之編碼器(encoder)組合在相同中文語料上訓練後，『不自信』 F1 僅 0.320，為三類中最低，而該類正是面試回饋中最需要準確判讀的目標。
+
+\planned{這邊整理英文 Scheme 1 至中文 N3 的模型演進，列出編碼器替換、資料選擇及對應比較結果。}
+
+\section{資料來源、標籤定義與前處理}
+
+\subsection{真人資料來源}
+本研究使用 MSP-Podcast、NNIME 與 EmotionTalk，分別支援雙語骨幹訓練與中文情緒辨識微調。
+
+% P04
+MSP-Podcast [2] 為本作品英文情緒模型之訓練語料。該研究提出自既有 Podcast 錄音中檢索情緒語音以建構大規模語料庫的方法，樣本取自真實對話而非演員表演，情緒分布亦較為均衡，適用於面試此類非表演性語音之判讀情境。
+
+NNIME [3] 為本作品中文情緒模型之訓練語料。該語料庫收錄 44 位受試者之即興雙人互動，同步記錄語音、影像與生理訊號，為中文自然互動情緒研究之重要資源，亦為少數具備足夠規模之繁體中文情境語料。
+
+EmotionTalk [4] 為本作品中文情緒模型之訓練語料。該語料庫收錄 19 位受試者之雙人互動，共 23.6 小時、19,250 句，同步提供聲學、影像與文字三種模態，並具備七類情緒、五級情感傾向與四維語音描述等多層次標註。
+
+本專題採用上述資料的音訊與文字。V1 雙語骨幹使用 MSP-Podcast 30,000 筆及 EmotionTalk 11,744 筆訓練資料，合計 41,744 筆；N3 第二階段使用 NNIME Train 3,054 筆，Dev 與 Test 分別為 608 與 638 筆。
+
+\planned{這邊放各資料集的版本、原始規模、實際使用量與 Train／Dev／Test 切分，並說明中文及台灣口音資料的選用考量。}
+
+\subsection{標籤映射與類別分布}
+% P05
+三類面試情緒: 原始語料採用八類通用情緒標註，其分類目的為描述一般情感狀態，與面試回饋所需的判讀維度並不一致。在內部討論以及調研後，將八類標註映射為三類面試情緒：興奮、不自信、中性，使模型輸出可直接對應面試者的表現特徵，並同時緩解原始語料中少數類別樣本過少的問題。
+
+NNIME 使用細粒度評分者標籤進行映射。快樂、興奮、期待與自信等納入 E；恐懼、緊張、傷心、尷尬、挫折及疑惑等納入 U；中性、放鬆、認真及嚴肅等納入 N。建置程式依票數與排除規則產生三類標籤，真人訓練集分布如表~\ref{tab:class_distribution} 所示。
+
+\begin{table}[htbp]
+\centering
+\caption{NNIME 真人訓練集之三類分布}
+\label{tab:class_distribution}
+\begin{tabular}{lrr}
+\toprule
+類別 & 筆數 & 比例（\%）\\
+\midrule
+興奮 E & 808 & 26.46\\
+不自信 U & 628 & 20.56\\
+中性 N & 1,618 & 52.98\\
+\midrule
+合計 & 3,054 & 100.00\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\planned{這邊分別列出 MSP-Podcast、EmotionTalk 與 NNIME 的完整標籤映射、排除規則，以及各 split 映射後的三類比例。}
+
+\subsection{前處理與資料切分}
+訓練端使用 16 kHz 音訊、最長前 12 秒及最多 128 tokens 的文字輸入。各組以 Train 計算並保存正規化統計，Dev 與 Test 使用對應模型的 Train 統計。真人資料切分固定，所有新增 TTS 均加入 Train；模型選擇依據 Dev macro-F1，Test 用於測試評估。
+
+\planned{這邊補前處理流程圖，依序說明音訊格式轉換、逐字稿處理、長度限制、正規化及資料切分。}
+
+\subsection{面試 TTS 擴增與時長匹配}
+本專題以面試相關回答製作 U 類 TTS，並採 Long12 與 Match-min1 兩種資料處理方式。A 組 Long12 使用不超過 12 秒的長片段；候選庫由 500 個原始回答，經複製、去首尾靜音或切分後形成 576 支衍生音檔。
+
+以真人 Train U 數量 $n_U=628$ 為基準，三組新增比例為 25\%、50\% 與 75\%，分別加入 157、314 及 471 筆 U TTS。混合後的 Train 總數依序為 3,211、3,368 及 3,525 筆。三組採巢狀集合，每組同一原始回答最多取一段。
+
+B 組 Match-min1 使用與 A 對應的來源片段，參考 NNIME Train U 中至少 1 秒的時長分布，依區間配額選取短片段。628 筆真人 U 中有 510 筆符合參考條件；短於 1 秒的 118 筆仍保留於真人 Train。切段利用標點、停頓或 ASR token 時間邊界，圖~\ref{fig:duration} 呈現參考集合與三組資料的分布。
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\textwidth]{assets/duration_distribution.pdf}
+\caption{NNIME Train U（至少 1 秒）與 Match-min1 三組資料之時長分布。}
+\label{fig:duration}
+\end{figure}
+
+\planned{這邊補 TTS 文本設計、生成聲線與情緒提示設定，並放入完整回答及切段後的音訊／文字示例。}
+\planned{這邊放資料品質檢查與人工驗收的流程、紀錄方式及結果。}
+\FloatBarrier
+
+\section{模型原理與中文適配}
+\label{sec:model_details}
+
+本節依圖~\ref{fig:architecture} 的流程，說明中文編碼器、跨模態融合與注意力池化，再介紹 LoRA 微調及多層對比監督。
+
+\subsection{編碼器替換與融合架構}
+% P06
+編碼器(encoder)跨語言替換: 語音側改用 wav2vec2-XLS-R-300M、文字側改用 XLM-RoBERTa-Large，取代原架構之 WavLM 與 RoBERTa，提升模型在中文的辨識能力。
+
+% P07
+跨模態融合部分維持原架構設計：語音與文字兩側各經線性投影與雙向 GRU 建模時序後，以跨模態注意力雙向對齊（語音查詢文字、文字查詢語音），殘差相加、注意力池化、串接後進分類頭。
+
+依 Crab~\cite{crab} 第 III-B 節，語音表徵為 $S^{F_s\times D_s}\in\mathbb R^{F_s\times D_s}$，文字表徵為 $T^{L\times D_t}\in\mathbb R^{L\times D_t}$。其中 $F_s$ 為音框數、$L$ 為文字 token 數，$D_s$ 與 $D_t$ 為兩側特徵維度。表徵經投影與雙向 GRU 後，再進行跨模態注意力與池化。
+
+以下採用 Crab 原論文式（3）與式（4）的注意力池化定義：
+% Crab.pdf p.4, Eq. (3): original scaling sqrt(D) retained.
+\begin{equation}
+ w_i=
+ \frac{\exp\!\left(\dfrac{r_i^\top m}{\sqrt D}\right)}
+ {\sum_{l=1}^{L}\exp\!\left(\dfrac{r_l^\top m}{\sqrt D}\right)},
+ \label{eq:paper_pool_weights}
+\end{equation}
+% Crab.pdf p.4, Eq. (4).
+\begin{equation}
+ r=\sum_{i=1}^{L}w_i r_i.
+ \label{eq:paper_pool}
+\end{equation}
+其中 $r_i\in\mathbb R^D$ 為第 $i$ 個 token 或音框的特徵，$m\in\mathbb R^D$ 為可學習參數，$w_i$ 為注意力權重；池化式中的 $L$ 表示該輸入序列長度。兩側池化結果串接為 $C\in\mathbb R^{D_f}$，其中 $D_f=4h$、$h=512$，再由分類頭輸出情緒 logits。
+
+\planned{這邊補各模組輸入／輸出維度及中文編碼器的適配方式，搭配模型圖說明完整推論路徑。}
+
+\subsection{LoRA 與多層對比監督}
+本專題以 LoRA 微調語音與文字編碼器，並訓練融合分類部分。LoRA 設定為 rank 16、alpha 32、dropout 0.1。
+
+% P08
+Crab [1] 為雙模態跨模態 Transformer 架構，核心是多層對比監督：在網路的多個層次注入對比學習訊號，而非只在最後的分類層施加監督，藉此提升中間表徵的鑑別力，且推論時不增加參數。
+
+Crab 的多層對比監督（Multi Layer Contrastive Supervision, MLCS）使用多正樣本對比學習（Multi-Positive Contrastive Learning, MPCL）。依原論文式（5），anchor $a$ 與候選 $b_i$ 的相對相容性定義為
+% Crab.pdf p.5, Eq. (5).
+\begin{equation}
+ q_i=\frac{\exp(a\cdot b_i/\tau)}
+ {\sum_{j=1}^{K}\exp(a\cdot b_j/\tau)}.
+ \label{eq:paper_mpcl_q}
+\end{equation}
+其中 $a$ 與 $b_i$ 皆經 $\ell_2$ 正規化，$\tau\in\mathbb R_+$ 為溫度參數，$K$ 為候選數量。原論文式（6）將同情緒候選定義為目標分布：
+% Crab.pdf p.5, Eq. (6).
+\begin{equation}
+ c_i=\frac{\matchone_{\mathrm{match}}(a,b_i)}
+ {\sum_{j=1}^{K}\matchone_{\mathrm{match}}(a,b_j)}.
+ \label{eq:paper_mpcl_c}
+\end{equation}
+當 anchor 與候選具有相同情緒標籤時，$\matchone_{\mathrm{match}}$ 為 1，否則為 0。MPCL 損失依原論文式（7），計算目標分布與預測分布的交叉熵：
+% Crab.pdf p.5, Eq. (7).
+\begin{equation}
+ \mathcal L_{\mathrm{MPCL}}=-\sum_{i=1}^{K}c_i\log q_i.
+ \label{eq:paper_mpcl}
+\end{equation}
+
+\planned{這邊補 LoRA 的可訓練參數配置與文獻，以及五個對比監督位置如何對應中文模型實作。}
+\FloatBarrier
+
+\section{訓練策略與實驗設計}
+
+\subsection{兩階段微調與共同初始化}
+% P09
+兩階段遷移訓練: 先於中英混合語料上建立雙語骨幹，再以 NNIME [3]完成第二階段微調。實測顯示中英混合訓練所得之骨幹，效能優於以更大量純英文資料訓練者，跨語言混合訓練於此具有正則化的作用。
+
+V1 表示雙語骨幹，N3 為由 V1 初始化並於 NNIME 進行第二階段微調的中文模型。各組 A、CL 與 B 實驗皆獨立載入同一 V1 權重並建立新的 optimizer。
+
+\planned{這邊放 V1 至 N3 的訓練關係圖，標示兩階段資料組成與各消融分支的共同初始化。}
+
+\subsection{損失函數與訓練配置}
+Crab~\cite{crab} 的最終訓練目標結合分類損失與多層對比損失。以下使用原論文式（8）：
+% Crab.pdf p.5, Eq. (8). alpha is the paper's contrastive weight.
+\begin{equation}
+ \mathcal L_{\mathrm{ser}}
+ =\mathcal L_{\mathrm{CE}}\!\left(m_K(\mathcal X),\mathcal Y\right)
+ +\alpha\cdot\frac{1}{|\Omega|}
+ \sum_{i\in\Omega}\mathcal L_{\mathrm{MPCL}}
+ \!\left(m_i(\mathcal X),\mathcal Y\right).
+ \label{eq:paper_mlcs}
+\end{equation}
+其中 $\mathcal X$ 為輸入、$\mathcal Y$ 為標籤，$m_K$ 表示最終分類輸出、$m_i$ 表示對應的中間層表徵，$\Omega$ 為施加對比監督的層集合，$\alpha$ 為對比損失權重。中文實驗的分類項採類別加權交叉熵，並以五個監督位置的對比損失平均作為輔助訓練訊號；本文以 $\alpha$ 對應實驗命名中的 CL 權重。
+
+\begin{table}[htbp]
+\centering
+\caption{中文 N3 與 TTS 消融之核心訓練配置}
+\label{tab:training}
+\small
+\begin{tabularx}{\textwidth}{lX}
+\toprule
+項目 & 配置\\
+\midrule
+初始化 & V1 語音／文字 LoRA 與 SER head\\
+學習率 & Head：$5\times10^{-5}$；Encoder LoRA：$2\times10^{-5}$\\
+Optimizer／scheduler & AdamW；CosineAnnealingLR，$T_{\max}=10$\\
+Batch & Micro-batch 4；gradient accumulation 4\\
+CE 權重 & E：1.2599；U：1.6210；N：0.6292\\
+Head／精度 & Hidden 512、dropout 0.5；FP32；gradient clipping 1.0\\
+A 單 seed／CL & 最多 10 epochs，early-stop patience 5\\
+A 多 seed／B & 10 epochs，不啟用 early stopping\\
+選模 & 最佳 Dev macro-F1 checkpoint\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\planned{這邊補完整超參數、訓練環境與模型保存方式，並說明各實驗固定項及變動項。}
+
+\subsection{消融設計與評估指標}
+A 組比較 Long12 U TTS 的 25／50／75\% 新增量；CL 組固定 A25，設定 $\alpha=0,1,2,3$；多 seed 實驗以三種新增量搭配 seeds42／43／44；B 組使用對應的 Match-min1 資料，比較時長匹配前後的辨識表現。
+
+\planned{這邊放消融實驗配置總覽，整理各組的資料版本、TTS 新增量、CL 權重、seed 與訓練輪數。}
+
+主要評估指標為三類等權的 macro-F1：
+\begin{equation}
+ F1_c=\frac{2TP_c}{2TP_c+FP_c+FN_c},\qquad
+ \operatorname{Macro\text{-}F1}=\frac{1}{3}\sum_{c\in\mathcal C}F1_c.
+ \label{eq:macrof1}
+\end{equation}
+另記錄各類 precision 與 recall：
+\begin{equation}
+ \operatorname{Precision}_c=\frac{TP_c}{TP_c+FP_c},\qquad
+ \operatorname{Recall}_c=\frac{TP_c}{TP_c+FN_c}.
+ \label{eq:precisionrecall}
+\end{equation}
+Dev 用於選擇 checkpoint，Test 用於測試評估；多 seed 結果以平均值與樣本標準差呈現。
+
+\subsection{實驗結果與分析}
+% P10 is held in the internal source record; results are placeholders by request.
+\planned{這邊放原 N3 與 A25／A50／A75 的 Dev、Test 結果，呈現 macro-F1 與各類 precision、recall、F1。}
+\planned{這邊放 CL 權重消融、多 seed 平均與標準差，以及 A／B 時長匹配比較。}
+\planned{這邊放混淆矩陣、代表性錯例與結果分析，說明中文辨識及不自信類別的改善情形。}
+\FloatBarrier
+
+\section{推論流程與系統整合}
+\label{sec:inference}
+
+\subsection{音訊與文字片段的建立}
+\planned{這邊說明使用者錄音如何經 ASR 產生逐字稿與時間標記，再建立對應的音訊／文字片段並送入情緒辨識模型。}
+\planned{這邊放錄音、ASR、片段切分、N3 辨識與結果回傳的流程圖，搭配一筆輸入／輸出示例。}
+
+\subsection{API 介面與服務流程}
+N3 API 提供單筆、批次與長音訊入口。單筆及 batch 內各片段上限為 12 秒，batch 最多 16 筆，文字上限為 128 個 XLM-R tokens。批次介面內部逐筆執行 forward，輸出包含主情緒標籤、三類分數、模型身分與音訊長度。
+
+\planned{這邊放 API 輸入／輸出欄位與實際串接範例，說明辨識結果如何對應回答回合及音訊時間位置。}
+\planned{這邊補長音訊處理、失敗回應、服務延遲與部署環境，搭配系統整合測試結果。}
+
+\section{辨識結果彙整與面試回饋}
+
+\subsection{回饋時機與呈現方式}
+% P11
+本系統不在模擬面試期間顯示即時分數與評語，刻意限縮資訊揭露，使互動回歸「僅有使用者與面試官對談」之真實條件；所有評估資訊統一保留至面試結束後之檢討階段呈現。
+
+% P12
+成果報告將各項評分指標清晰分隔，並搭配互動式走勢圖設計。使用者無需頻繁翻頁，只需在固定視窗中透過最少的滑鼠操作，就能輕鬆掌握最全面、最精準的自我表現數據。
+
+\planned{這邊放面試結果頁截圖，呈現逐句情緒、時間軸、原句與錄音回放的介面。}
+
+\subsection{彙整規則與回饋內容}
+\planned{這邊說明片段、單次回答與整場面試的彙整方式，列出計算規則及分母。}
+\planned{這邊放回饋文案與使用示例，說明情緒結果如何搭配面試內容評語提供練習建議。}
+\planned{這邊補資料不足或辨識失敗時的呈現方式，以及使用者回聽與檢視結果的操作流程。}
+
+\begin{samepage}
+\section{方法限制與適用條件}
+
+\planned{這邊說明三類情緒標籤的定義與適用範圍，交代情緒辨識在面試練習中的角色。}
+\planned{這邊整理資料來源、台灣口音、錄音條件、ASR 誤差與片段長度對辨識的影響，搭配實驗或案例分析。}
+\planned{這邊整理 TTS 資料品質、聲線及文本多樣性，並交代驗收方式與分析結果。}
+\planned{這邊說明資料授權、面試錄音的隱私處理，以及後續模型與資料改善方向。}
+\end{samepage}
+
+\begingroup
+\let\chapter\section
+\begin{thebibliography}{9}
+\bibitem{crab} L. H. Ueda, J. G. T. Lima, and P. D. P. Costa,
+``Crab: Multi Layer Contrastive Supervision to Improve Speech Emotion Recognition Under Both Acted and Natural Speech Condition,''
+arXiv preprint arXiv:2603.23673, 2026.
+\bibitem{msp} R. Lotfian and C. Busso,
+``Building Naturalistic Emotionally Balanced Speech Corpus by Retrieving Emotional Speech from Existing Podcast Recordings,''
+\textit{IEEE Trans. Affective Computing}, vol. 10, no. 4, pp. 471--483, Oct.--Dec. 2019.
+\bibitem{nnime} H.-C. Chou, W.-C. Lin, L.-C. Chang, C.-C. Li, H.-P. Ma, and C.-C. Lee,
+``NNIME: The NTHU-NTUA Chinese Interactive Multimodal Emotion Corpus,''
+in \textit{Proc. 7th Int. Conf. Affective Computing and Intelligent Interaction (ACII)}, 2017, pp. 292--298.
+\bibitem{emotiontalk} H. Sun et al.,
+``EmotionTalk: An Interactive Chinese Multimodal Emotion Dataset With Rich Annotations,''
+arXiv preprint arXiv:2505.23018, 2025.
+\end{thebibliography}
+\endgroup
+\planned{這邊補 XLS-R、XLM-R 與 LoRA 的文獻，並統一全書參考文獻格式。}

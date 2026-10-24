@@ -1,0 +1,493 @@
+\chapter{情緒辨識機制}
+\label{chap:emotion}
+
+第二章回顧了 CRAB 的雙模態融合架構與多層對比監督（Multi Layer Contrastive Supervision, MLCS）。本章說明本專題如何將其轉為台灣華語面試練習所需的情緒辨識模組，並以實驗檢驗各項設計。CRAB 的模組原理、注意力池化與 MPCL 公式已於第 2.3、2.4 節說明，本章不再重述，只交代本專題的改動、資料、訓練設定與實證結果。本章的工作可歸納為以下四項：
+
+\begin{itemize}
+  \item \textbf{任務重定義：}將各語料庫的細粒度情緒標註映射為面試導向的三類情緒——興奮、不自信與中性。
+  \item \textbf{中文適配：}以跨語言編碼器取代 CRAB 原有的英文編碼器，搭配 LoRA 與「雙語骨幹→台灣華語適配」的兩階段訓練。
+  \item \textbf{資料擴增：}以面試情境的語音合成（TTS）補充不自信類別，比較長片段與時長匹配兩種資料建構方式。
+  \item \textbf{系統整合：}將模型包裝為本地端推論服務，供面試系統逐句呼叫，並於面試後呈現結果。
+\end{itemize}
+
+主要結果是：中文適配使 NNIME 測試集的 Macro-F1 由 50.28\% 提升至 58.77\%，不自信類 F1 由 32.0\% 提升至 48.2\%；TTS 擴增則以中性誤報的增加換取不自信召回的提升，整體增益未超出訓練變異，因此系統部署的仍是未加 TTS 的基準模型。
+
+% ======================================================================
+\section{辨識任務與系統定位}
+\label{sec:task}
+
+面試練習除了回答內容，也涉及作答時的語音表達。本模組以 CRAB 模型~\cite{crab} 為架構，由本團隊自行訓練權重並部署為本地端服務。系統將每一則回答切分為 3 至 12 秒的句段，逐段輸出三類面試情緒（興奮／不自信／中性），標出回答中可能呈現不自信的句子，供使用者回聽檢討；相較於將整段回答歸納為單一標籤，逐句判讀可以保留段內的情緒變化。形式上，設第 $i$ 個片段的音訊為 $x_i$、對應文字為 $t_i$，模型 $f_\theta$ 輸出三類 logits $\boldsymbol z_i$，再經 softmax 得到各類分數與預測標籤：
+\begin{equation}
+ \boldsymbol z_i=f_\theta(x_i,t_i),\qquad
+ p_{i,c}=\frac{\exp(z_{i,c})}{\sum_{k\in\mathcal C}\exp(z_{i,k})},\qquad
+ \hat y_i=\mathop{\arg\max}_{c\in\mathcal C}p_{i,c},\qquad
+ \mathcal C=\{E,U,N\}.
+ \label{eq:prediction}
+\end{equation}
+
+三個類別皆為本專題依面試回饋需求所定義的操作型類別，各自涵蓋的原始情緒如下（完整映射見表~\ref{tab:mapping}）：
+\begin{itemize}
+  \item \textbf{興奮（Excited, E）：}正向或高喚醒的表達，涵蓋快樂、興奮、期待、驚訝與自信等。
+  \item \textbf{不自信（Unconfident, U）：}缺乏把握或負向低落的表達，以恐懼與悲傷兩群為核心，涵蓋緊張、焦慮、傷心、失望、尷尬與挫折等。
+  \item \textbf{中性（Neutral, N）：}未明顯偏向前兩類的表達，涵蓋中性、放鬆、平靜、認真與嚴肅等。
+\end{itemize}
+
+情緒辨識與面試內容評分在系統中分開處理：本模組只描述語音與文字片段的情緒類別，回答品質與專業能力由面試流程中的大型語言模型評估。模型輸出的主類別分數 $\max_c p_{i,c}$ 代表模型對預測類別的傾向，並非使用者的「自信程度」，也未經機率校準，因此回饋頁只將它作為回顧線索，不作為對使用者的心理評斷。
+
+% ======================================================================
+\section{中文適配之模型架構}
+\label{sec:model}
+
+本專題的模型如圖~\ref{fig:architecture} 所示，融合部分完全沿用 CRAB 的單模態、跨模態與分類三個區塊（第 2.3 節），五個對比監督分支的位置也與第 2.4.2 節相同。本專題的改動集中於以下三處，其效果於第~\ref{sec:res_adapt} 節驗證：
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.86\textwidth]{assets/fig_architecture.jpg}
+\caption{本專題之中文雙模態情緒辨識模型。架構依 CRAB~\cite{crab}（圖 2-1），本專題將兩側編碼器替換為 XLS-R 與 XLM-R 並以 LoRA 微調，分類頭輸出 E／U／N 三類。}
+\label{fig:architecture}
+\end{figure}
+
+\begin{itemize}
+  \item \textbf{跨語言編碼器：}語音側改用 wav2vec2-XLS-R-300M~\cite{xlsr}、文字側改用 XLM-RoBERTa-Large~\cite{xlmr}，取代原架構的 WavLM 與 RoBERTa。XLS-R 以 128 種語言預訓練，每 20\,ms 輸出一個 1,024 維音框；XLM-R 以 100 種語言預訓練，詞表涵蓋中文。原 RoBERTa 的詞表以英文為主，無法為中文逐字稿提供有意義的語意表徵。
+  \item \textbf{參數高效率微調：}兩側編碼器凍結原始權重，只在各層自注意力的 query 與 value 投影加入 LoRA~\cite{lora}（rank 16、縮放係數 32、dropout 0.1），融合模組與分類頭則完整訓練。
+  \item \textbf{三類輸出：}分類頭最後一層改為三維輸出，類別權重依 NNIME 訓練集的類別分布重新計算（第~\ref{sec:training} 節）。
+\end{itemize}
+
+% ======================================================================
+\section{資料來源、標籤映射與前處理}
+\label{sec:data}
+
+本專題只使用各語料庫的音訊與文字（語料庫另提供的影像或生理訊號未使用）。三個真人語料分別支援兩個訓練階段：
+
+\begin{itemize}
+  \item \textbf{MSP-Podcast~\cite{msp}：}取自 Podcast 的英文自然對話語音。第一階段從其 110,469 筆訓練資料中抽取 30,000 筆，使英、中資料比由約 9.4：1 降至約 2.6：1，降低英文的主導程度。
+  \item \textbf{EmotionTalk~\cite{emotiontalk}：}19 位受試者的中文雙人互動，共 23.6 小時、19,250 句，提供七類情緒標註。第一階段使用其中 11,744 筆訓練資料。
+  \item \textbf{NNIME~\cite{nnime}：}44 位受試者依指定情境進行的台灣華語即興雙人互動，是少數具備足夠規模的台灣華語情緒語料，最接近本系統的目標口音。第二階段以其句層級語音與逐字稿進行適配。
+\end{itemize}
+
+\begin{table}[!htb]
+\centering
+\caption{各語料之三類情緒映射規則}
+\label{tab:mapping}
+\small\setlength{\tabcolsep}{5pt}
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{2.75cm}>{\raggedright\arraybackslash\hsize=.8\hsize}X>{\raggedright\arraybackslash\hsize=1.6\hsize}X>{\raggedright\arraybackslash\hsize=.8\hsize}X>{\raggedright\arraybackslash\hsize=.8\hsize}X@{}}
+\toprule
+語料 & 興奮 E & 不自信 U & 中性 N & 排除\\
+\midrule
+MSP-Podcast、\newline EmotionTalk & 快樂、驚訝 & 恐懼、悲傷 & 中性 & 生氣、厭惡（MSP 另含輕蔑）\\
+NNIME\newline（62 種細標籤） & 快樂、興奮、驚訝、期待、自信等 9 種 & 恐懼群（緊張、焦慮、擔心）、悲傷群（傷心、失望、無奈）、低自信群（尷尬）、挫折與疑惑等 31 種 & 中性、放鬆、祥和、認真、嚴肅、其他 & 生氣、不耐煩、雜訊等\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+原始語料的情緒標註用於描述一般情感狀態，與面試回饋所需的判讀維度並不一致，因此本專題依表~\ref{tab:mapping} 將其映射為三類。U 以恐懼與悲傷兩群為核心：在面試情境中，緊張、擔心屬於缺乏把握的表現，失落、無奈則常出現在答不出來或自我否定時，兩者都是本系統希望提醒使用者回顧的片段；生氣與厭惡不屬於面試回饋要處理的狀態，因此排除。NNIME 每句由六位評分者標註、每人可複選，本專題先把各評分者的細標籤映射為三類，再以多數決決定該句的標籤。其中「挫折」歸入 U，是因為在 NNIME 的挫折情境中，評分者標出失望、傷心與恐懼的比例（19.5\%）明顯高於生氣類（8.3\%），中文的「挫折」語意較接近失落；這項決定使 U 訓練樣本由 476 筆增至 628 筆。三類映射擴大了每一類的涵蓋範圍，也意味著 U 內部並不同質。
+
+\begin{table}[!htb]
+\centering
+\caption{兩階段訓練之資料組成（筆數）}
+\label{tab:data}
+\small
+\begin{tabular}{@{}llrrrrl@{}}
+\toprule
+階段 & 資料與切分 & E & U & N & 合計 & 用途\\
+\midrule
+\multirow{2}{*}{第一階段} & MSP-Podcast Train & 10,934 & 5,183 & 13,883 & 30,000 & \multirow{2}{*}{建立雙語骨幹}\\
+ & EmotionTalk Train & 2,807 & 1,369 & 7,568 & 11,744 & \\
+\midrule
+\multirow{3}{*}{第二階段} & NNIME Train（15 組） & 808 & 628 & 1,618 & 3,054 & 適配；TTS 只加入此集\\
+ & NNIME Dev（3 組） & 183 & 190 & 235 & 608 & 選擇 checkpoint\\
+ & NNIME Test（4 組） & 181 & 165 & 292 & 638 & 保留評估\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+NNIME 依參與者組別切分（表~\ref{tab:data}），同一位說話者不會同時出現在不同集合；原始資料中有一位受試者橫跨兩個組別，這兩組被放在同一集合以避免洩漏。NNIME 訓練集中 N 占 52.98\%、U 僅占 20.56\%，類別不平衡明顯。前處理方面，音訊重取樣為 16\,kHz 單聲道並只取前 12 秒；文字以 XLM-R tokenizer 切分，最多 128 個 token。波形正規化的平均值與標準差只由各組的訓練集計算並隨模型保存，Dev 與 Test 沿用同一組統計。
+
+% ======================================================================
+\section{面試情境 TTS 擴增}
+\label{sec:tts}
+
+不自信類在 NNIME 訓練集中最少、F1 也最低，而 NNIME 的對話內容並非面試情境。因此本專題以 TTS 生成面試回答，補充 U 類訓練資料。合成素材為 500 段涵蓋 61 種職業的面試回答文本，以 Gemini 3.1 Flash TTS 的單一聲線（Zephyr）、三種「台灣華語、緊張遲疑」風格的提示語生成；每段的 U 標籤來自生成意圖，尚未經人工聆聽驗收。所有合成音訊只加入訓練集，Dev 與 Test 維持為真人資料。在此基礎上，本專題比較兩種資料建構方式：
+
+\begin{itemize}
+  \item \textbf{A 組（長片段）：}使用不超過 12 秒的長片段。500 段原始回答經直接沿用、去除首尾靜音或對半切分，形成 576 個候選片段，平均長度約 9.8 秒，遠長於真人 U。
+  \item \textbf{B 組（時長匹配）：}從 A 組相同的原始回答中擷取短片段，使長度分布匹配 NNIME 訓練集中至少 1 秒的真人 U；切點多數落在標點，少數落在停頓或 ASR 詞邊界，平均約 3.0 秒。
+\end{itemize}
+
+\begin{figure}[t]
+\centering
+\begin{minipage}[b]{0.46\textwidth}
+\centering
+\includegraphics[width=\linewidth]{assets/fig_duration.pdf}
+\caption{NNIME 真人 U 與兩種 TTS 資料建構方式（添加比例 75\%）之片段長度分布。}
+\label{fig:duration}
+\end{minipage}\hfill
+\begin{minipage}[b]{0.51\textwidth}
+\centering
+\captionof{table}{U 類 TTS 添加比例與第二階段訓練集組成}
+\label{tab:dose_comp}
+\small\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+比例 & 新增 U & Train 合計 & 筆數占比 & 時長占比$^{*}$\\
+\midrule
+0\% & 0 & 3,054 & 0 & 0\\
+25\% & 157 & 3,211 & 4.89 & 18.59\\
+50\% & 314 & 3,368 & 9.32 & 31.29\\
+75\% & 471 & 3,525 & 13.36 & 40.67\\
+\bottomrule
+\end{tabular}
+\par\smallskip\footnotesize 占比為 TTS 占訓練集之百分比；$^{*}$以 A 組計算。\par\vspace{1.2em}
+\end{minipage}
+\end{figure}
+
+新增量以真人訓練集的 U 數量（628 筆）為基準，分為 25\%、50\% 與 75\% 三種添加比例，即 157、314 與 471 筆，以下以 A25、B75 等表示「組別＋添加比例」。三種比例採巢狀集合（$157\subset314\subset471$），每段原始回答在同一組中最多取一個片段。圖~\ref{fig:duration} 顯示 B 組的長度分布貼近真人 U，A 組則集中在 8–12 秒。筆數比例並不等於資訊量比例：A75 的合成音訊只占訓練筆數 13.36\%，卻占訓練音訊總時長 40.67\%；B 組在相同筆數下的總時長只有 A 組的三成。此外，為模擬實際錄音環境並避免模型把乾淨的合成音色當成判斷線索，本專題另以 A75 為底建立環境音增強版本：471 筆中有 141 筆混入環境背景音，並以同一批資料但不混音的版本作為對照。
+
+% ======================================================================
+\section{訓練策略與實驗設計}
+\label{sec:training}
+
+\begin{figure}[t]
+\centering
+{\setstretch{1.0}%
+\begin{tikzpicture}[font=\footnotesize, x=1mm, y=1mm,
+  box/.style={draw=black!55, rounded corners=2pt, align=center, inner sep=2.5pt, fill=#1},
+  box/.default=white,
+  br/.style={draw=black!45, rounded corners=2pt, align=left, inner sep=2.5pt, text width=66mm, fill=orange!8, anchor=west},
+  arr/.style={-{Stealth[length=1.8mm]}, black!60}]
+\node[box=gray!8, text width=34mm] (d1) at (18,0) {MSP-Podcast 30,000\\EmotionTalk 11,744};
+\node[box=blue!8, text width=30mm] (v1) at (57,0) {\textbf{V1 雙語骨幹}\\LoRA + CRAB 分類頭};
+\node[br, fill=gray!6] (n3) at (81,16) {基準模型：NNIME Train 3,054 筆};
+\node[br] (a)  at (81,8)  {A 組：+ 長片段 U TTS（25/50/75\%）};
+\node[br] (b)  at (81,0) {B 組：+ 時長匹配 U TTS（25/50/75\%）};
+\node[br] (cl) at (81,-8)  {對比權重消融：A25 資料，$\alpha=0,1,2,3$};
+\node[br] (au) at (81,-16) {環境音增強：A75 資料 + 背景音／不混音對照};
+\draw[arr] (d1) -- (v1);
+\draw[black!60] (v1.east) -- (77,0);
+\draw[black!60] (77,16) -- (77,-16);
+\foreach \n in {n3,a,cl,b,au} \draw[arr] (77,0 |- \n.west) -- (\n.west);
+\node[black!60] at (38,-10) {第一階段};
+\node[black!60] at (116,-23) {第二階段（各分支獨立由 V1 初始化）};
+\end{tikzpicture}}
+\caption{兩階段訓練與各實驗分支之關係。第二階段每個分支都重新載入同一份 V1 權重並建立新的 optimizer，不由前一組接續訓練；所有分支均以相同的 NNIME 真人 Dev（608 筆）與 Test（638 筆）評估。}
+\label{fig:pipeline}
+\end{figure}
+
+本專題採兩階段遷移訓練（圖~\ref{fig:pipeline}）。第一階段以 MSP-Podcast 與 EmotionTalk 共 41,744 筆建立雙語骨幹（以下稱 V1），分類頭與 LoRA 的學習率分別為 $2\times10^{-4}$ 與 $1\times10^{-4}$。這高於 CRAB 原論文的設定（第 2.5 節），因為原論文是對整個編碼器做全參數微調，而 LoRA 只更新少量新增參數，通常需要較大的學習率。V1 的最佳 Dev Macro-F1 為 65.52\%，在 29,447 筆雙語 Test 上為 65.31\%（MSP-Podcast 65.12\%、EmotionTalk 63.86\%）。為確認 V1 學到的不只是訓練語料的特性，本專題另以未參與訓練的 IEMOCAP~\cite{iemocap} 與 MELD~\cite{meld} 依相同規則映射為三類後評估，Macro-F1 分別為 59.90\% 與 50.97\%。
+
+第二階段由 V1 初始化，在 NNIME 訓練集上適配，所得模型即本章的\textbf{基準模型}（實驗代號 N3），也是第~\ref{sec:inference} 節部署的模型。為減少對雙語骨幹的破壞，分類頭與 LoRA 的學習率分別降至第一階段的四分之一與五分之一（$5\times10^{-5}$、$2\times10^{-5}$）。訓練目標沿用 CRAB 的式（2-6），由類別加權交叉熵與五個監督位置的平均 MPCL 損失組成，對比損失權重 $\alpha$ 預設為 2；加權交叉熵依式（2-7）以 NNIME 訓練集計算，E、U、N 的權重為 1.2599、1.6210 與 0.6292。加入 TTS 後不重新計算權重，使各組的分類損失定義一致；但這也代表加入的 U 樣本越多，U 在總損失中的份量越重，第~\ref{sec:res_tts} 節會再討論其影響。表~\ref{tab:config} 列出第二階段的共同配置。
+
+\begin{table}[t]
+\centering
+\caption{第二階段（基準模型與各 TTS 實驗）之共同訓練配置}
+\label{tab:config}
+\small
+\begin{tabularx}{\textwidth}{@{}lXlX@{}}
+\toprule
+項目 & 設定 & 項目 & 設定\\
+\midrule
+初始化 & V1 兩側 LoRA 與分類頭 & Optimizer & AdamW，CosineAnnealingLR（$T_{\max}=10$）\\
+學習率 & 分類頭 $5\times10^{-5}$／LoRA $2\times10^{-5}$ & 批次$^{*}$ & Micro-batch 4 × 梯度累積 4\\
+LoRA & rank 16、縮放係數 32、dropout 0.1 & 精度 & FP32，gradient clipping 1.0\\
+融合模組 & $h=512$、dropout 0.5 & 對比權重 & $\alpha=2$（對比權重消融除外）\\
+輸入上限 & 16\,kHz、前 12 秒；128 tokens & 選模 & 最佳 Dev Macro-F1 之 checkpoint\\
+訓練輪數 & 固定 10 個 epoch$^{\dagger}$ & 評估批次 & Dev 16 筆／Test 1 筆$^{\ddagger}$\\
+\bottomrule
+\end{tabularx}
+\par\smallskip\footnotesize
+$^{*}$MPCL 只在每個 4 筆的 micro-batch 內比較，同類正樣本少於原論文（批次 32、梯度累積 4，即每次 8 筆）。
+$^{\dagger}$對比權重消融與基準模型為最多 10 個 epoch、patience 5 的 early stopping。
+$^{\ddagger}$Dev 以 16 筆為一批，注意力池化未遮罩補零音框；Test 與線上服務皆逐筆推論。
+\end{table}
+
+在共同配置下，本專題設計表~\ref{tab:experiments} 的實驗，每組回答一個問題。本專題設定的目標是 NNIME Test Macro-F1 達 65\%。
+
+\begin{table}[t]
+\centering
+\caption{第二階段實驗一覽（皆由 V1 獨立初始化）}
+\label{tab:experiments}
+\small
+\begin{tabularx}{\textwidth}{@{}l>{\raggedright\arraybackslash}Xll@{}}
+\toprule
+實驗 & 研究問題 & seed & 評估\\
+\midrule
+A 組（長片段） & 加入 25／50／75\% 長片段 U TTS 是否改善辨識？ & 42、43、44 & Dev；seed 42 另評估 Test\\
+B 組（時長匹配） & 合成片段長度貼近真人分布是否較好？與同比例 A 組配對比較 & 42 & Dev、Test\\
+對比權重消融 & 中文小資料上是否仍需要多層對比監督？固定 A25，$\alpha\in\{0,1,2,3\}$ & 42 & Dev\\
+環境音增強 & 混入背景音是否改善合成資料的效果？與不混音對照 & 42 & Dev\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+主要指標為三類等權的 Macro-F1，使少數類 U 與多數類 N 在總分中份量相同：
+\begin{equation}
+ F1_c=\frac{2TP_c}{2TP_c+FP_c+FN_c},\qquad
+ \operatorname{Macro\text{-}F1}=\frac{1}{3}\sum_{c\in\mathcal C}F1_c .
+ \label{eq:macrof1}
+\end{equation}
+另記錄各類 precision、recall、UAR 與混淆矩陣。每組以 Dev Macro-F1 選擇 checkpoint，Test 只作保留評估，不依 Test 排名回頭更換 epoch 或添加比例。
+
+\FloatBarrier
+% ======================================================================
+\section{實驗結果與分析}
+\label{sec:results}
+
+解讀以下結果時，本章採用一致的判讀原則。第一，除表~\ref{tab:cl_seed}(b) 外均為單一 seed；同一份資料、同一 seed 與相同設定的兩次訓練，Dev Macro-F1 就相差 0.88 個百分點（以下以 pp 表示；55.05\% 與 55.93\%），同一添加比例三個 seed 的標準差最高達 1.93\,pp。第二，以兩個固定模型在 Dev 上逐句配對 bootstrap，差值的 95\% 信賴區間半寬約 3\,pp，依 14 個場次群集重抽則約 3.8\,pp；此區間只反映評估樣本的抽樣誤差，不含訓練隨機性。第三，基準模型是較早期的單次訓練，本輪未在相同環境重訓不加 TTS 的對照組，因此相對基準模型的差值同時混有訓練隨機性。綜合上述，本章將 3\,pp 以內的差異只視為趨勢。
+
+\subsection{中文適配：提升最明確的一步}
+\label{sec:res_adapt}
+
+表~\ref{tab:evolution} 整理在相同 NNIME Test 上的模型演進。沿用原 CRAB 編碼器、以英文 CRAB 模型初始化後再於 NNIME 微調，不自信 F1 只有 32.0\%，為三類最低，而該類正是面試回饋最需要準確判讀的目標；改用跨語言編碼器並以 V1 初始化（基準模型）後，不自信 F1 提升至 48.2\%，Macro-F1 由 50.28\% 提升至 58.77\%。由於這兩組同時更換了編碼器、初始化與學習率，表中結果只能說明「跨語言編碼器＋雙語骨幹」的整體組合優於沿用英文 CRAB，不能拆解各因素的單獨貢獻。另外兩組對照也指出初始化的重要性：不經 V1、直接以 3,054 筆 NNIME 微調預訓練編碼器時，模型幾乎全部預測為 U；把 NNIME 與其他中英文語料一起聯合訓練，表現仍低於先建立雙語骨幹、再以 NNIME 適配的基準模型。
+
+\begin{table}[t]
+\centering
+\caption{中文模型演進：各設定於 NNIME Test（638 筆）之三類表現（\%）}
+\label{tab:evolution}
+\small\setlength{\tabcolsep}{2.9pt}
+\begin{tabular}{@{}llllrrrr@{}}
+\toprule
+設定 & 語音／文字編碼器 & 初始化 & 訓練筆數 & Macro-F1 & E F1 & U F1 & N F1\\
+\midrule
+直接微調 & XLS-R／XLM-R & 無 & 3,054 & 18.06 & 0.0 & 41.1 & 13.0\\
+英文 CRAB 遷移 & WavLM／RoBERTa & 英文 CRAB$^{a}$ & 3,054 & 50.28 & 55.1 & 32.0 & 63.7\\
+四語料聯合$^{b}$ & XLS-R／XLM-R & 無 & 53,422 & 55.43 & 56.3 & 40.3 & 69.7\\
+\textbf{基準模型} & XLS-R／XLM-R & \textbf{V1} & 3,054 & \textbf{58.77} & \textbf{58.3} & \textbf{48.2} & \textbf{69.8}\\
+\midrule
+文字置空$^{c}$ & \multicolumn{3}{l}{基準模型推論時移除文字輸入} & 37.26 & — & — & —\\
+\bottomrule
+\end{tabular}
+\par\smallskip\footnotesize
+訓練筆數除四語料聯合外皆為 NNIME 訓練集。$^{a}$以 MSP-Podcast 英文三類資料訓練的原架構 CRAB。$^{b}$MSP-Podcast、EmotionTalk、NNIME 與另一個中文對話語料。$^{c}$模型未針對無文字輸入訓練，僅用以觀察文字的貢獻。各列學習率與訓練輪數不完全相同，均為單次訓練。
+\end{table}
+
+在參數效率方面，V1 的可訓練參數為 22.58M，約為全參數微調（890.55M）的 2.5\%；兩者在同一份雙語 Test 上的 Macro-F1 分別為 65.31\% 與 64.08\%，表現相近，但 LoRA 只需更新極少的參數。表~\ref{tab:evolution} 最後一列是基準模型在推論時把文字置空的結果：Macro-F1 由 58.77\% 降至 37.26\%，顯示模型高度依賴文字內容，與第 2.7.1 節 CRAB 原論文「文字單模態優於語音單模態」的觀察一致，也說明線上系統必須確保送入的逐字稿與音訊片段對齊。
+
+\subsection{TTS 擴增：不自信召回上升，中性誤報增加}
+\label{sec:res_tts}
+
+表~\ref{tab:main} 為同一 seed 下 A、B 兩組三種添加比例與基準模型的比較。依事先規定的 Dev 選模，六組中選出 A25（Dev 57.22\%），其 Test 為 58.48\%，與基準模型的 58.77\% 相當；Test 最高的 B75（60.84\%）是事後觀察，且 B 組在 Dev 上並未優於 A 組。逐類來看，加入 U 類 TTS 後，多數組別的 U F1 與 U recall 高於基準模型，但 N F1 普遍下降，A 組把真人中性判為不自信的筆數也由 38 筆增至 70–76 筆。換言之，補充 U 資料使決策邊界往 U 移動，Macro-F1 的變化是 U 的增益與 N 的損失互相抵銷的結果，而非三類全面進步。對面試練習而言，把正常回答標成不自信同樣有使用體驗的成本，因此不能只追求 U recall。
+
+\begin{table}[t]
+\centering
+\caption{TTS 擴增之主要結果（seed 42，各組依 Dev 選擇 checkpoint，\%）}
+\label{tab:main}
+\small\setlength{\tabcolsep}{3.6pt}
+\begin{tabular}{@{}lrrrrrrrrr@{}}
+\toprule
+ & \multicolumn{3}{c}{Macro-F1} & \multicolumn{6}{c}{Test 逐類指標}\\
+\cmidrule(lr){2-4}\cmidrule(l){5-10}
+模型 & Dev & Test & Test$_{\ge3\text{s}}$ & E F1 & U F1 & N F1 & U Prec. & U Rec. & N→U\\
+\midrule
+基準模型 & 52.83 & 58.77 & \textbf{59.02} & 58.25 & 48.23 & 69.82 & 51.37 & 45.45 & 38\\
+\midrule
+A25 & \textbf{57.22} & 58.48 & 51.23 & 58.75 & 51.35 & 65.34 & 46.34 & 57.58 & 73\\
+A50 & 54.03 & 56.40 & 49.98 & 52.59 & 50.26 & 66.35 & 44.24 & \textbf{58.18} & 76\\
+A75 & 56.05 & 60.41 & 52.82 & \textbf{63.83} & 51.28 & 66.11 & 48.39 & 54.55 & 70\\
+\midrule
+B25 & 54.28 & 60.73 & 57.33 & 60.81 & 49.66 & \textbf{71.72} & \textbf{56.59} & 44.24 & \textbf{31}\\
+B50 & 53.69 & 58.11 & 55.61 & 57.84 & 47.14 & 69.36 & 53.03 & 42.42 & 39\\
+B75 & 56.23 & \textbf{60.84} & 53.34 & 62.50 & \textbf{52.15} & 67.87 & 49.46 & 55.15 & 63\\
+\bottomrule
+\end{tabular}
+\par\smallskip\footnotesize Test$_{\ge3\text{s}}$：Test 中長度至少 3 秒的 151 筆（E 39／U 61／N 51），對應線上系統的 3–12 秒句段，為事後分析。N→U：292 筆真人中性中被判為不自信的筆數。基準模型為較早期的單次訓練，A、B 組固定訓練 10 個 epoch。
+\end{table}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\textwidth]{assets/fig_test_analysis.pdf}
+\caption{NNIME Test 之錯誤分析。(a) 基準模型混淆矩陣（列為真實類別，格內為筆數與列比例）；(b) 不自信召回率與 (c) 被判為不自信的比例，皆依片段長度分組，灰色粗線為各長度區間中真人 U 的實際比例。}
+\label{fig:test_analysis}
+\end{figure}
+
+圖~\ref{fig:test_analysis} 進一步說明錯誤來源。基準模型最主要的錯誤是真人 U 被判為 N（列比例 47\%），其次是真人 E 被判為 N（32\%），顯示模型在不確定時傾向輸出中性；E 被判為 U 也有 18\%，U 與 E 之間並非沒有混淆。片段長度的影響同樣明顯：所有模型在不足 1 秒的片段上，U recall 只有約 20\%，片段越長召回率越高（圖~\ref{fig:test_analysis}(b)）。不過圖~\ref{fig:test_analysis}(c) 顯示，A 組的高召回有一部分來自「越長越像 U」的偏向：在 4–12 秒的片段中，A25 與 A75 把 53–65\% 判為 U，明顯高於基準模型（36–43\%）；以 2–4 秒的真人中性為例，基準模型誤判 8／59 筆，A25 誤判 23／59 筆，B25 則回到 8／59 筆。B 組加入的是短片段，因此大致消除了這個偏向，判 U 的比例回到接近基準模型的水準，但 B25、B50 也因此漏掉更多真人 U。
+
+造成上述偏向的可能來源至少有兩個：其一，類別權重固定，加入 25–75\% 的 U 後，U 在總損失中的份量升至 E、N 的 1.25–1.75 倍；其二，A 組的合成音訊全為 U 且多為 8–12 秒，可能讓模型學到以長度判斷 U 的捷徑。本輪實驗無法分離兩者。表~\ref{tab:main} 的 Test$_{\ge3\text{s}}$ 欄則顯示這個偏向的實際影響：在與線上系統相同的 3 秒以上片段中，基準模型的 59.02\% 高於所有 TTS 版本，A 組只有 50–53\%。此為事後分析且樣本僅 151 筆，但方向與上述偏向一致。此外，從長回答切出的短片段可能失去遲疑、停頓與語尾等線索，切後仍沿用原本的 U 標籤，這部分仍需人工聆聽驗收才能確認。
+
+\subsection{對比損失權重與訓練隨機性}
+
+表~\ref{tab:cl_seed}(a) 固定 A25 資料、只改變 $\alpha$。$\alpha\ge1$ 的三組 Dev Macro-F1 都比取消第二階段對比損失（$\alpha=0$）高 2.4–3.4\,pp，且 E 與 U 同時改善，方向一致；但幅度與單次訓練的變異相當，只能視為保留第二階段對比損失的初步支持。$\alpha=2$ 的 Macro-F1 最高、$\alpha=3$ 的 UAR 最高，兩者差距皆小於 0.3\,pp，因此沿用 CRAB 原論文的 $\alpha=2$（第 2.7.3 節）。
+
+\begin{table}[t]
+\centering
+\caption{(a) 對比損失權重消融與 (b) A 組多 seed 比較；均為 Dev 指標（\%）}
+\label{tab:cl_seed}
+\small
+\begin{minipage}[t]{0.43\textwidth}
+\centering (a) 固定 A25 資料，seed 42\par\smallskip
+\begin{tabular}{@{}crrrr@{}}
+\toprule
+$\alpha$ & Macro-F1 & E F1 & U F1 & UAR\\
+\midrule
+0 & 52.57 & 59.43 & 38.98 & 52.91\\
+1 & 55.02 & 64.12 & 42.37 & 55.73\\
+2 & \textbf{55.93} & \textbf{64.55} & \textbf{43.84} & 56.31\\
+3 & 55.64 & 64.16 & 43.64 & \textbf{56.37}\\
+\bottomrule
+\end{tabular}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.54\textwidth}
+\centering (b) Macro-F1，$\alpha=2$\par\smallskip
+\begin{tabular}{@{}lrrrr@{}}
+\toprule
+組別 & seed 42 & seed 43 & seed 44 & 平均 ± 標準差\\
+\midrule
+A25 & \textbf{57.22} & 54.12 & 53.67 & 55.01 ± 1.93\\
+A50 & 54.03 & 54.97 & 55.22 & 54.74 ± 0.63\\
+A75 & 56.05 & \textbf{55.79} & \textbf{55.87} & \textbf{55.91 ± 0.13}\\
+\bottomrule
+\end{tabular}
+\end{minipage}
+\end{table}
+
+表~\ref{tab:cl_seed}(b) 說明單次結果的不確定性。A25 在 seed 42 得到全表最高的 57.22\%，另兩個 seed 卻只有約 54\%，若只報最佳 seed 便會高估 A25 的效果。A75 三次結果最集中，平均 55.91\% 也最高，但與 A25、A50 的平均差距都不到 1.2\,pp。換言之，三種添加比例之間的差異並未超出訓練隨機性。
+
+\subsection{環境音增強與表徵觀察}
+
+環境音增強版本的 Dev Macro-F1 為 56.19\%，同資料但不混音的對照組為 56.07\%；差值 +0.13\,pp，95\% 信賴區間為 $[-2.98,\,+3.23]$\,pp（依場次群集重抽為 $[-3.75,\,+3.83]$\,pp），未觀察到可辨識的效果。由於兩組的最佳 epoch 不同且只有單一 seed，本章不據以判斷背景音的作用。
+
+\begin{figure}[!htb]
+\centering
+\includegraphics[width=0.74\textwidth]{assets/fig_tsne.pdf}
+\caption{t-SNE~\cite{tsne} 特徵投影。(a) 未經情緒微調之 XLS-R 平均音框特徵，NNIME Train 3,054 筆依映射後三類著色；(b) 基準模型分類頭第一層之 512 維特徵，NNIME Test 638 筆依真人標籤著色。兩圖各自降維，座標不可互相比較。}
+\label{fig:tsne}
+\end{figure}
+
+圖~\ref{fig:tsne} 以 t-SNE 輔助觀察特徵分布。在未經情緒微調的預訓練語音特徵中（圖~\ref{fig:tsne}(a)），三類在投影上完全交錯、未見分群；經基準模型訓練後（圖~\ref{fig:tsne}(b)），E 形成相對集中的區域，U 與 N 仍大幅重疊，與混淆矩陣中 U、N 互相誤判為主要錯誤的結果一致。t-SNE 只作描述，群集的形狀與距離不用來比較模型優劣。
+
+\subsection{小結與部署選擇}
+
+綜合本節結果，中文適配是本專題提升最明確的一步；TTS 擴增則把決策邊界推向 U，不自信召回上升的同時，中性誤報也隨之增加，各版本與基準模型的差距都在 3\,pp 的變異範圍內，且尚未達到 65\% 的目標。依事先規定的 Dev 選模，TTS 版本與基準模型相當；在線上系統實際處理的 3 秒以上片段中，基準模型反而較佳；合成資料也尚未完成人工驗收。因此第~\ref{sec:inference} 節部署的是未加 TTS 的基準模型。目前的主要瓶頸可歸納為三點：
+
+\begin{itemize}
+  \item \textbf{U 與 N 的邊界：}模型在不確定時傾向輸出中性，而補充 U 又會增加中性誤報，兩者難以同時改善。
+  \item \textbf{短片段：}不足 1 秒的片段 U recall 只有約 20\%，缺少足夠的聲學線索與文字語境。
+  \item \textbf{合成資料品質：}全部 TTS 來自單一聲線，U 標籤只是生成意圖，且長片段的長度分布可能形成捷徑。
+\end{itemize}
+
+% ======================================================================
+\section{推論服務與系統整合}
+\label{sec:inference}
+
+\begin{figure}[!htb]
+\centering
+\begin{tikzpicture}[font=\small, node distance=5mm,
+  box/.style={draw=black!55, rounded corners=2pt, align=center, inner sep=3pt, minimum height=9mm, fill=#1},
+  box/.default=white, arr/.style={-{Stealth[length=2mm]}, black!60}]
+\node[box=gray!8] (rec) {作答錄音};
+\node[box, right=of rec] (asr) {ASR 逐字稿\\＋時間戳};
+\node[box, right=of asr] (seg) {逐句切分\\（3–12 秒）};
+\node[box=blue!8, right=of seg] (api) {情緒辨識服務\\音訊＋文字};
+\node[box, right=of api] (out) {主標籤\\三類分數};
+\node[box=green!8, right=of out] (fb) {面試後\\回饋頁};
+\foreach \a/\b in {rec/asr,asr/seg,seg/api,api/out,out/fb} \draw[arr] (\a) -- (\b);
+\draw[arr] (rec.south) -- ++(0,-4mm) -| (seg.south);
+\end{tikzpicture}
+\caption{情緒辨識的線上推論流程。音訊片段與文字須對應同一時間區間；時間戳與回合編號由應用端保留，以便將結果放回原回答。}
+\label{fig:inference}
+\end{figure}
+
+線上推論流程如圖~\ref{fig:inference}：使用者的作答錄音先經 ASR 產生逐字稿與時間戳，再依句切出 3 至 12 秒的音訊片段及其對應文字，以批次送入情緒辨識服務；應用端把結果與回合、時間位置關聯，於面試結束後呈現。服務以 FastAPI 實作，只在本機或私有網路提供，部署的是基準模型，並提供三種入口：
+
+\begin{itemize}
+  \item \textbf{單筆：}一個不超過 12 秒的片段。超過 12 秒的音訊或超過 128 個 XLM-R token 的文字會明確拒絕，而不是靜默截斷。
+  \item \textbf{批次：}最多 16 個片段，為正式流程的主要入口；內部逐筆推論，使結果與離線評估完全一致。
+  \item \textbf{長音訊：}以 12 秒視窗、6 秒步距滑動處理，最長 300 秒。視窗是固定時間切分，不等同於語意上的逐句切分，僅作輔助用途。
+\end{itemize}
+
+每筆回應包含主情緒標籤、三類分數、主類別分數、模型版本、輸入模式與音訊長度，並分別記錄排隊、推論與伺服器總時間。服務只載入一份模型、以單一 GPU 工作佇列依序處理，搭配有限長度的等待佇列與逾時設定，避免同時請求造成記憶體不足。呼叫端若遇到逾時或推論失敗，應把該片段標示為「無法判讀」，不可默認為中性。
+
+\begin{wraptable}{r}{0.44\textwidth}
+\vspace{-1.2em}
+\centering
+\caption{推論延遲（RTX 3090，伺服器處理時間中位數）}
+\label{tab:latency}
+\small
+\begin{tabular}{@{}lr@{}}
+\toprule
+請求 & 延遲（ms）\\
+\midrule
+單筆 1／3／6 秒 & 44／46／49\\
+單筆 12 秒 & 68\\
+批次 16 × 3 秒 & 719\\
+長音訊 60／300 秒 & 640／3,266\\
+\bottomrule
+\end{tabular}
+\vspace{-0.8em}
+\end{wraptable}
+
+在效能與正確性驗證方面，表~\ref{tab:latency} 為單一 RTX 3090 的實測延遲：一般長度的句段約 50\,ms 內完成，遠低於面試後產生報告的時間需求，模型常駐約占 4.4\,GB 顯示記憶體。經由 HTTP 服務推論 NNIME Test 638 筆的預測與離線評估逐筆相同（Macro-F1 58.77\%）。以 3 秒合成音訊進行 30 分鐘、每秒約一次請求的持續測試，1,780 筆全部成功；此測試只檢驗穩定性，合成音訊的預測結果不具辨識意義。服務已在另一台 RTX A4500 工作站完成本機整合驗證，與正式面試系統的串接及重開機後自動恢復仍待完成。
+
+\planned{與系統負責人確認正式後端採用的 ASR、斷句規則與時間戳精度，並附一筆實際「錄音→逐句結果」的輸入／輸出示例。}
+
+% ======================================================================
+\section{辨識結果彙整與面試回饋}
+\label{sec:feedback}
+
+本系統不在模擬面試期間顯示即時分數與評語，刻意限縮資訊揭露，使互動回歸「僅有使用者與面試官對談」的真實條件；所有評估資訊統一保留至面試結束後的檢討階段呈現。情緒結果依三個層級彙整：
+
+\begin{itemize}
+  \item \textbf{逐句：}顯示每句的預測類別、原句、時間位置與回放按鈕，讓使用者直接回聽被判為不自信的片段。
+  \item \textbf{單題回答：}以時間軸呈現該題各句的情緒變化，並以有效時長計算三類所占比例，避免短句與長句等權。
+  \item \textbf{整場面試：}呈現各題的情緒走勢，與面試官的內容評語並列；推論失敗的片段標為「無法判讀」，不計入比例的分母。
+\end{itemize}
+
+回饋文字以可查驗的描述呈現，例如「第 3 題第 2 句被判為不自信，可回聽比較當時的語速與停頓」，而非「你缺乏自信」之類的定論。情緒比例也不直接換算為面試能力分數，以免把模型的分類傾向當成對使用者的評價。
+
+\planned{放入面試結果頁截圖（逐句情緒、時間軸、原句與錄音回放），並確認彙整規則與上述設計一致。}
+
+% ======================================================================
+\section{方法限制與適用條件}
+\label{sec:limits}
+
+本模組適用於學術研究及面試練習的輔助回顧，其結果應連同原始片段與標籤定義一起解讀。主要限制如下：
+
+\begin{itemize}
+  \item \textbf{標籤是操作型定義：}三類來自本專題的映射規則，U 合併了恐懼、悲傷與挫折等不同情緒，不能視為心理學上的自信量測。
+  \item \textbf{領域落差：}NNIME 是依指定情境即興進行的互動語料，並非真實面試錄音；目前的成績未涵蓋所有口音、中英夾雜與實際錄音環境，也尚未在經同意收集的真人面試資料上驗證。
+  \item \textbf{評估條件：}離線評估使用資料集的人工逐字稿，線上系統使用 ASR 逐字稿，而模型高度依賴文字，ASR 錯誤可能降低實際表現。Dev 以 16 筆為一批且未遮罩補零音框，Test 則逐筆推論，兩者分數不宜直接比較。
+  \item \textbf{合成資料：}TTS 來自單一聲線、標籤未經人工驗收，且只有 U 類使用面試文本，模型可能把面試語意、合成音色或片段長度當成判斷 U 的捷徑。
+  \item \textbf{統計證據：}多數比較為單一 seed，沒有在相同環境重訓的不加 TTS 對照組，Test 也已在開發過程中多次觀察；3\,pp 以內的差異不宜視為穩定改善，最終結論需以未參與開發的新資料確認。
+  \item \textbf{授權與隱私：}NNIME 依學術授權使用，本報告不附原始音檔與逐字稿；面試錄音的同意、保存與刪除政策由系統端統一規範。
+\end{itemize}
+
+後續將優先處理目前證據指出的瓶頸：在相同環境重訓不加 TTS 的對照組，以分離 TTS 的真實效果；以人工聆聽驗收合成資料，並讓 E、N 也有面試情境的合成樣本，避免長度與語意捷徑；利用 NNIME 六位評分者的投票分布改以軟標籤訓練，處理 U 與 N 的模糊邊界；並收集經同意的台灣華語面試語音作為獨立測試集。
+
+% ======================================================================
+\begingroup
+\let\chapter\section
+\renewcommand{\bibname}{本章參考文獻}
+\begin{thebibliography}{9}
+\setlength{\itemsep}{0.1em}
+\small
+\bibitem{crab} L. H. Ueda, J. G. T. Lima, and P. D. P. Costa,
+``Crab: Multi Layer Contrastive Supervision to Improve Speech Emotion Recognition Under Both Acted and Natural Speech Condition,''
+arXiv preprint arXiv:2603.23673, 2026.
+\bibitem{xlsr} A. Babu et al.,
+``XLS-R: Self-supervised Cross-lingual Speech Representation Learning at Scale,''
+in \textit{Proc. Interspeech}, 2022, pp. 2278--2282.
+\bibitem{xlmr} A. Conneau et al.,
+``Unsupervised Cross-lingual Representation Learning at Scale,''
+in \textit{Proc. ACL}, 2020, pp. 8440--8451.
+\bibitem{lora} E. J. Hu et al.,
+``LoRA: Low-Rank Adaptation of Large Language Models,''
+in \textit{Proc. ICLR}, 2022.
+\bibitem{msp} R. Lotfian and C. Busso,
+``Building Naturalistic Emotionally Balanced Speech Corpus by Retrieving Emotional Speech from Existing Podcast Recordings,''
+\textit{IEEE Trans. Affective Computing}, vol. 10, no. 4, pp. 471--483, 2019.
+\bibitem{emotiontalk} H. Sun et al.,
+``EmotionTalk: An Interactive Chinese Multimodal Emotion Dataset With Rich Annotations,''
+arXiv preprint arXiv:2505.23018, 2025.
+\bibitem{nnime} H.-C. Chou, W.-C. Lin, L.-C. Chang, C.-C. Li, H.-P. Ma, and C.-C. Lee,
+``NNIME: The NTHU-NTUA Chinese Interactive Multimodal Emotion Corpus,''
+in \textit{Proc. ACII}, 2017, pp. 292--298.
+\bibitem{iemocap} C. Busso et al.,
+``IEMOCAP: Interactive Emotional Dyadic Motion Capture Database,''
+\textit{Language Resources and Evaluation}, vol. 42, no. 4, pp. 335--359, 2008.
+\bibitem{meld} S. Poria et al.,
+``MELD: A Multimodal Multi-Party Dataset for Emotion Recognition in Conversations,''
+in \textit{Proc. ACL}, 2019, pp. 527--536.
+\bibitem{tsne} L. van der Maaten and G. Hinton,
+``Visualizing Data using t-SNE,''
+\textit{Journal of Machine Learning Research}, vol. 9, pp. 2579--2605, 2008.
+\end{thebibliography}
+\endgroup

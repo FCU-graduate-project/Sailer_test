@@ -1,0 +1,37 @@
+{
+  "arm": "n3_reference",
+  "macro_f1": 0.5876700386973901,
+  "accuracy": 0.6175548589341693,
+  "confusion_matrix": [
+    [
+      90,
+      33,
+      58
+    ],
+    [
+      13,
+      75,
+      77
+    ],
+    [
+      25,
+      38,
+      229
+    ]
+  ],
+  "regression_passed": true,
+  "max_probability_delta": 1.1920928955078125e-07,
+  "feature_shape": [
+    638,
+    512
+  ],
+  "base_commit": "1a640f32ac3e39899438a2931f9924c02f080a54",
+  "torch": "2.2.0+cu121",
+  "numpy": "1.24.4",
+  "gpu": "NVIDIA GeForce RTX 3090",
+  "gpu_peak_allocated_bytes": 3883075072,
+  "normalization": {
+    "mean": -8.863423100591493e-06,
+    "std": 0.0663871037905838
+  }
+}
